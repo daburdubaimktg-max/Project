@@ -1,6 +1,6 @@
 'use strict';
 /* NEE — Nishant's Eyes and Ears. UI layer. Keep APP_VERSION in step with CACHE_VERSION in sw.js. */
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 
 (function () {
   const TYPES = [['MV', 'Market visit'], ['HV', 'Home visit'], ['TR', 'Trade'], ['SL', 'Salon'],
@@ -8,10 +8,17 @@ const APP_VERSION = '1.4.1';
   const OUTLETS = ['spaza', 'informal/hawker', 'salon', 'pharmacy chain', 'independent pharmacy', 'supermarket chain',
     'discounter', 'wholesaler/cash & carry', 'beauty store', 'home', 'office', 'other'];
   const DEFAULT_COUNTRIES = ['ZAF', 'NGA', 'GHA', 'KEN', 'EGY'];
-  const COUNTRY_NAME = { ZAF: 'South Africa', NGA: 'Nigeria', GHA: 'Ghana', KEN: 'Kenya', EGY: 'Egypt', TZA: 'Tanzania', UGA: 'Uganda',
-    ETH: 'Ethiopia', ZMB: 'Zambia', ZWE: 'Zimbabwe', MOZ: 'Mozambique', AGO: 'Angola', CIV: "Côte d'Ivoire", SEN: 'Senegal',
-    CMR: 'Cameroon', MAR: 'Morocco', DZA: 'Algeria', TUN: 'Tunisia', RWA: 'Rwanda', BWA: 'Botswana', NAM: 'Namibia',
-    ARE: 'United Arab Emirates', SAU: 'Saudi Arabia' };
+  // Countries the user can pick by name (Africa, Middle East, South Asia). Any other 3-letter code can be typed in.
+  const COUNTRY_NAME = { DZA: 'Algeria', AGO: 'Angola', BEN: 'Benin', BWA: 'Botswana', BFA: 'Burkina Faso', BDI: 'Burundi', CPV: 'Cabo Verde',
+    CMR: 'Cameroon', CAF: 'Central African Republic', TCD: 'Chad', COM: 'Comoros', COG: 'Congo', COD: 'DR Congo', CIV: "Côte d'Ivoire",
+    DJI: 'Djibouti', EGY: 'Egypt', GNQ: 'Equatorial Guinea', ERI: 'Eritrea', SWZ: 'Eswatini', ETH: 'Ethiopia', GAB: 'Gabon', GMB: 'Gambia',
+    GHA: 'Ghana', GIN: 'Guinea', GNB: 'Guinea-Bissau', KEN: 'Kenya', LSO: 'Lesotho', LBR: 'Liberia', LBY: 'Libya', MDG: 'Madagascar',
+    MWI: 'Malawi', MLI: 'Mali', MRT: 'Mauritania', MUS: 'Mauritius', MAR: 'Morocco', MOZ: 'Mozambique', NAM: 'Namibia', NER: 'Niger',
+    NGA: 'Nigeria', RWA: 'Rwanda', STP: 'São Tomé and Príncipe', SEN: 'Senegal', SYC: 'Seychelles', SLE: 'Sierra Leone', SOM: 'Somalia',
+    ZAF: 'South Africa', SSD: 'South Sudan', SDN: 'Sudan', TZA: 'Tanzania', TGO: 'Togo', TUN: 'Tunisia', UGA: 'Uganda', ZMB: 'Zambia',
+    ZWE: 'Zimbabwe', ARE: 'United Arab Emirates', SAU: 'Saudi Arabia', QAT: 'Qatar', KWT: 'Kuwait', BHR: 'Bahrain', OMN: 'Oman',
+    JOR: 'Jordan', LBN: 'Lebanon', IRQ: 'Iraq', YEM: 'Yemen', SYR: 'Syria', PSE: 'Palestine', TUR: 'Türkiye', IRN: 'Iran',
+    IND: 'India', PAK: 'Pakistan', BGD: 'Bangladesh', NPL: 'Nepal', LKA: 'Sri Lanka' };
   const COLOURS = ['', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'];
   const EXT = { 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/aac': 'aac', 'audio/webm': 'webm', 'audio/ogg': 'ogg',
     'audio/wav': 'wav', 'audio/mpeg': 'mp3', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic',
@@ -268,6 +275,7 @@ const APP_VERSION = '1.4.1';
         ${labels.length ? `<select id="fLabel" aria-label="Filter by label">${options(labels, filters.label, 'All labels')}</select>` : ''}
       </div>` : ''}` : ''}
       <div id="list"></div>
+      <p class="ver">Version ${APP_VERSION}</p>
       <button class="fab" id="fab">${ICON.plus}New visit</button>
       ${tabbar('home')}`;
     $('#toSettings').onclick = () => go('#/settings');
@@ -384,7 +392,7 @@ const APP_VERSION = '1.4.1';
       <h2>New visit</h2>
       <div class="types" id="nvTypes" role="group" aria-label="Category"></div>
       <div class="grid2">
-        <label class="f">Country<select id="nvCountry">${options(countries.map(c => [c, countryLabel(c)]), 'ZAF')}</select></label>
+        <label class="f">Country<select id="nvCountry"></select></label>
         <label class="f">City<input type="text" id="nvCity" list="dlCity" ${noAttr}></label>
       </div>
       <datalist id="dlCity">${uniq('city').map(c => `<option value="${esc(c)}">`).join('')}</datalist>
@@ -397,11 +405,19 @@ const APP_VERSION = '1.4.1';
       <div class="flabel" id="nvCL">Did they say yes to being recorded?</div>
       <div class="seg" id="nvConsent" role="group" aria-labelledby="nvCL"><button class="btn" data-c="yes" aria-pressed="false">Yes, consent stated</button><button class="btn on" data-c="no" aria-pressed="true">No</button></div>
       <div class="row end"><button class="btn" id="nvCancel">Cancel</button><button class="btn primary grow" id="nvCreate" disabled>Choose a category</button></div>`);
-    const create = $('#nvCreate', o), outlet = $('#nvOutlet', o);
+    const create = $('#nvCreate', o), outlet = $('#nvOutlet', o), ctry = $('#nvCountry', o);
     outlet.onchange = () => { outletTouched = true; };
+    let country = 'ZAF';
+    const drawCountries = () => { ctry.innerHTML = options(countries.map(c => [c, countryLabel(c)]), country) + '<option value="__add">＋ Add another country…</option>'; };
+    drawCountries();
+    ctry.onchange = () => {
+      if (ctry.value !== '__add') { country = ctry.value; return; }
+      ctry.value = country;
+      addCountrySheet(c => { country = c; drawCountries(); });
+    };
     const tiles = () => {
       $('#nvTypes', o).innerHTML = allTypes().map(t => `<button class="btn ${t[0] === type ? 'on' : ''}" data-t="${esc(t[0])}" aria-pressed="${t[0] === type}"><strong>${esc(t[0])}</strong><span>${esc(t[1])}</span></button>`).join('') +
-        `<button class="btn dashed" data-newtype>${ICON.plus}New category</button>`;
+        `<button class="btn dashed" data-newtype>${ICON.plus}Add your own category</button>`;
     };
     const pick = code => {
       type = code; tiles();
@@ -423,12 +439,41 @@ const APP_VERSION = '1.4.1';
     create.onclick = async () => {
       create.disabled = true;
       try {
-        const v = await DB.createVisit({ visit_type: type, country: $('#nvCountry', o).value, city: $('#nvCity', o).value,
+        const v = await DB.createVisit({ visit_type: type, country, city: $('#nvCity', o).value,
           suburb: $('#nvSuburb', o).value, outlet_type: outlet.value, who_role: $('#nvWho', o).value,
           consent_stated: consent, visit_type_name: (customTypes.find(t => t[0] === type) || [])[1] || '' }, APP_VERSION);
         o.remove(); go(`#/v/${encodeURIComponent(v.visit_id)}`);
       } catch (e) { create.disabled = false; toast('Could not create the visit — storage error.'); }
     };
+  }
+
+  /* ---------- adding countries ---------- */
+  function addCountrySheet(done) {
+    const o = overlay(`<h2>Add a country</h2>
+      <input type="search" id="acQ" placeholder="Search by name" aria-label="Search countries" autocomplete="off" autocorrect="off" spellcheck="false">
+      <div class="menu clist" id="acList"></div>
+      <p class="small muted">Not listed? Type its 3-letter code.</p>
+      <div class="addrow"><input type="text" id="acCode" maxlength="3" placeholder="e.g. FRA" aria-label="3-letter country code" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"><button class="btn" id="acAdd">Add</button></div>
+      <div class="row end"><button class="btn grow" id="acCancel">Cancel</button></div>`);
+    const add = async c => {
+      if (!countries.includes(c)) { countries.push(c); await DB.setMeta('countries', countries); }
+      o.remove(); toast(`Added ${COUNTRY_NAME[c] || c}`); if (done) done(c);
+    };
+    const draw = () => {
+      const q = fold($('#acQ', o).value.trim());
+      const rows = Object.entries(COUNTRY_NAME).filter(([c, n]) => !countries.includes(c) && (!q || fold(n).includes(q) || fold(c).includes(q)))
+        .sort((a, b) => a[1].localeCompare(b[1]));
+      $('#acList', o).innerHTML = rows.length ? rows.map(([c, n]) => `<button class="btn block" data-ac="${c}"><b class="mono">${c}</b>${esc(n)}</button>`).join('')
+        : '<p class="muted">No match in the list. Type the 3-letter code below.</p>';
+    };
+    $('#acQ', o).oninput = draw; draw();
+    $('#acList', o).onclick = e => { const b = e.target.closest('[data-ac]'); if (b) add(b.dataset.ac); };
+    $('#acAdd', o).onclick = () => {
+      const c = $('#acCode', o).value.trim().toUpperCase();
+      if (!/^[A-Z]{3}$/.test(c)) return toast('Use a 3-letter country code, A to Z');
+      add(c);
+    };
+    $('#acCancel', o).onclick = () => o.remove();
   }
 
   /* ---------- custom categories ---------- */
@@ -1124,7 +1169,8 @@ const APP_VERSION = '1.4.1';
         <div class="addrow"><input type="text" id="clLink" inputmode="url" placeholder="https://claude.ai/project/…" aria-label="Claude Project link" value="${esc(claudeLink)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"><button class="btn" id="clSave">Save</button></div></div>
       <h2 class="sec">Countries</h2>
       <div class="box"><div class="chips" id="ctry"></div>
-        <div class="addrow"><input type="text" id="ctryNew" maxlength="3" placeholder="3-letter code, e.g. TZA" aria-label="New country code" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"><button class="btn" id="ctryAdd">Add</button></div></div>
+        <p class="small muted">These appear in the Country list when you start a visit. Removing one keeps its past visits.</p>
+        <button class="btn block" id="ctryAdd">${ICON.plus}Add country</button></div>
       <h2 class="sec">Good to know on iPhone</h2>
       <div class="box"><ul class="plain">
         <li>Recording stops if the screen locks or you switch apps. Keep the screen on. What was recorded up to that point is kept.</li>
@@ -1161,12 +1207,7 @@ const APP_VERSION = '1.4.1';
       const b = e.target.closest('[data-rc]'); if (!b) return;
       countries.splice(+b.dataset.rc, 1); await DB.setMeta('countries', countries); drawC();
     };
-    $('#ctryAdd').onclick = async () => {
-      const el = $('#ctryNew'), c = el.value.trim().toUpperCase();
-      if (!/^[A-Z]{3}$/.test(c)) return toast('Use a 3-letter country code');
-      if (!countries.includes(c)) { countries.push(c); await DB.setMeta('countries', countries); }
-      el.value = ''; drawC();
-    };
+    $('#ctryAdd').onclick = () => addCountrySheet(drawC);
     drawC();
   }
 

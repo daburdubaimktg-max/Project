@@ -343,3 +343,8 @@ html { scroll-padding-bottom: 96px; }
 .capture { bottom: var(--kb, 0px); }
 body.kbup .capture { padding-top: 6px; padding-bottom: 6px; box-shadow: 0 -6px 16px rgba(0,0,0,.18); }
 body.kbup .capture .btn { min-height: 48px; }
+
+/* ---- v1.5: country picker ---- */
+.clist { max-height: 38vh; overflow-y: auto; margin: 10px 0; padding: 2px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.clist .btn { min-height: 50px; gap: 12px; }
+.ver { text-align: center; color: var(--muted); font-size: 13px; margin: 28px 0 0; }

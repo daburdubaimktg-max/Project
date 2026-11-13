@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0 — 2026-11-13
+
+- Add a country by name: the Country list in New visit ends with "Add another country…", which opens a searchable list of African, Middle Eastern and South Asian countries (or type any 3-letter code). The same picker is in Settings.
+- The category tile in New visit now reads "Add your own category".
+- The app version is shown at the bottom of the Visits list.
+
 ## 1.4.1 — 2026-11-13
 
 - Photo, Record and Video stay visible while typing, lifted to sit just above the keyboard. The Visits/Summary tabs and New visit button still step aside while the keyboard is up.
