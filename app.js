@@ -1,6 +1,6 @@
 'use strict';
 /* NEE — Nishant's Eyes and Ears. UI layer. Keep APP_VERSION in step with CACHE_VERSION in sw.js. */
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 
 (function () {
   const TYPES = [['MV', 'Market visit'], ['HV', 'Home visit'], ['TR', 'Trade'], ['SL', 'Salon'],
@@ -14,6 +14,19 @@ const APP_VERSION = '1.0.0';
     'audio/wav': 'wav', 'audio/mpeg': 'mp3', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic',
     'image/heif': 'heif', 'image/webp': 'webp', 'image/gif': 'gif', 'video/mp4': 'mp4', 'video/quicktime': 'mov',
     'video/webm': 'webm' };
+
+  const svg = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+  const ICON = {
+    settings: svg('<path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/>'),
+    pin: svg('<path d="M7 4h10v16l-5-4-5 4z"/>'),
+    plus: svg('<path d="M12 5v14M5 12h14"/>'),
+    mic: svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>'),
+    stop: svg('<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>'),
+    camera: svg('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
+    video: svg('<rect x="3" y="6" width="12" height="12" rx="2"/><path d="M15 10l6-3v10l-6-3z"/>'),
+    book: svg('<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11M9 8h6"/>'),
+  };
+  const REC_IDLE = `${ICON.mic}<span>Record</span>`, REC_ON = `${ICON.stop}<span>Stop</span>`;
 
   const root = document.getElementById('app');
   const $ = (s, r = document) => r.querySelector(s);
@@ -106,7 +119,9 @@ const APP_VERSION = '1.0.0';
     const labels = [...new Set(all.flatMap(v => v.labels))].sort();
     const ctry = [...new Set([...countries, ...all.map(v => v.country)])];
     root.innerHTML = `
-      <header class="bar"><h1 class="grow">Eyes &amp; Ears</h1><button class="btn ghost" id="toSettings">Settings</button></header>
+      <header class="bar home"><div class="grow"><h1>Eyes &amp; Ears</h1>
+        <div class="today">${esc(fmtDate(U.ymd()))} · ${all.length} visit${all.length === 1 ? '' : 's'}</div></div>
+        <button class="btn icon" id="toSettings" aria-label="Settings">${ICON.settings}</button></header>
       <div id="banners"></div>
       <input id="q" type="search" placeholder="Search text, notes, places, labels" aria-label="Search visits"
         autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(filters.q)}">
@@ -116,7 +131,7 @@ const APP_VERSION = '1.0.0';
         <select id="fLabel" aria-label="Filter by label">${options(labels, filters.label, 'All labels')}</select>
       </div>
       <div id="list"></div>
-      <button class="fab" id="fab">+ New visit</button>`;
+      <button class="fab" id="fab">${ICON.plus}New visit</button>`;
     $('#toSettings').onclick = () => go('#/settings');
     $('#fab').onclick = () => newVisitSheet(all);
     $('#q').oninput = e => { filters.q = e.target.value; drawList(all); };
@@ -154,7 +169,7 @@ const APP_VERSION = '1.0.0';
     const exported = v.exported_at && Date.parse(v.exported_at) >= Date.parse(v.updated_at);
     return `<div class="card ${v.colour ? 'col-' + esc(v.colour) : ''}">
       <a href="#/v/${encodeURIComponent(v.visit_id)}">
-        <div class="cid">${esc(v.visit_id)}</div>
+        <div class="cid"><span class="tbadge">${esc(v.visit_type)}</span>${esc(v.visit_id)}</div>
         <div class="sub">${esc(TYPE_NAME[v.visit_type] || v.visit_type)}${place ? ' · ' + esc(place) : ''} · ${esc(v.start_time)}</div>
         ${snip ? `<div class="snip">${esc(snip)}</div>` : ''}
         <div class="chips">
@@ -164,14 +179,14 @@ const APP_VERSION = '1.0.0';
           ${exported ? '<span class="chip ok">Exported</span>' : ''}
         </div>
       </a>
-      <button class="pinbtn ${v.pinned ? 'on' : ''}" data-pin="${esc(v.visit_id)}" aria-pressed="${v.pinned}">${v.pinned ? 'Pinned' : 'Pin'}</button>
+      <button class="pinbtn ${v.pinned ? 'on' : ''}" data-pin="${esc(v.visit_id)}" aria-pressed="${v.pinned}" aria-label="Pin ${esc(v.visit_id)}">${ICON.pin}</button>
     </div>`;
   }
 
   function drawList(all) {
     const vs = all.filter(matches).sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at) || b.visit_id.localeCompare(a.visit_id));
     const box = $('#list');
-    if (!all.length) { box.innerHTML = '<p class="muted pad">No visits yet. Tap “+ New visit” to start.</p>'; return; }
+    if (!all.length) { box.innerHTML = `<div class="empty">${ICON.book}<strong>No visits yet</strong>Tap “New visit” to start capturing.</div>`; return; }
     if (!vs.length) { box.innerHTML = '<p class="muted pad">Nothing matches the search or filters.</p>'; return; }
     let html = '';
     const pinned = vs.filter(v => v.pinned);
@@ -287,9 +302,9 @@ const APP_VERSION = '1.0.0';
         <button class="btn danger block" id="delVisit">Delete visit</button>
       </div>
       <div class="capture"><div class="in">
-        <button class="btn" id="recBtn">● Record</button>
-        <label class="btn" id="photoBtn" role="button" tabindex="0">Photo<input type="file" id="photoIn" accept="image/*" capture="environment"></label>
-        <label class="btn" id="videoBtn" role="button" tabindex="0">Video<input type="file" id="videoIn" accept="video/*" capture="environment"></label>
+        <label class="btn" id="photoBtn" role="button" tabindex="0">${ICON.camera}Photo<input type="file" id="photoIn" accept="image/*" capture="environment"></label>
+        <button class="btn" id="recBtn">${REC_IDLE}</button>
+        <label class="btn" id="videoBtn" role="button" tabindex="0">${ICON.video}Video<input type="file" id="videoIn" accept="video/*" capture="environment"></label>
       </div></div>`;
     // Set text through .value so it is stored and shown exactly as entered.
     $('#txt').value = v.text_raw; $('#notes').value = v.typed_notes;
@@ -328,7 +343,7 @@ const APP_VERSION = '1.0.0';
 
   function drawHead() {
     const v = cur;
-    $('#pin').textContent = v.pinned ? 'Pinned' : 'Pin';
+    $('#pin').innerHTML = ICON.pin + (v.pinned ? 'Pinned' : 'Pin');
     $('#pin').classList.toggle('on', v.pinned); $('#pin').setAttribute('aria-pressed', v.pinned);
     $('#sum').textContent = [TYPE_NAME[v.visit_type] || v.visit_type, v.country, v.city, v.suburb, v.outlet_type, v.who_role,
       `consent ${v.consent_stated}`].filter(Boolean).join(' · ');
@@ -483,7 +498,7 @@ const APP_VERSION = '1.0.0';
     stream.getTracks().forEach(t => { t.onended = () => stopRec(); });
     mr.start(1000);
     await wakeLock();
-    const b = $('#recBtn'); b.textContent = '■ Stop'; b.classList.add('recording');
+    const b = $('#recBtn'); b.innerHTML = REC_ON; b.classList.add('recording');
     $('#rec').innerHTML = `<div class="recpanel" role="status"><div class="time" id="recTime">0:00</div>
       <div><strong>Recording.</strong> Keep the screen on and stay in this app — recording stops if the phone locks or you switch apps.${Rec.lock ? ' Screen will stay awake.' : ''}</div></div>`;
     Rec.timer = setInterval(() => { const t = $('#recTime'); if (t) t.textContent = fmtDur(Math.round((Date.now() - Rec.t0) / 1000)); }, 500);
@@ -501,7 +516,7 @@ const APP_VERSION = '1.0.0';
     stream.getTracks().forEach(t => { t.onended = null; t.stop(); });
     try { if (Rec.lock) await Rec.lock.release(); } catch (e) { /* already released */ }
     Rec.lock = null;
-    const b = $('#recBtn'); if (b) { b.textContent = '● Record'; b.classList.remove('recording'); }
+    const b = $('#recBtn'); if (b) { b.innerHTML = REC_IDLE; b.classList.remove('recording'); }
     const p = $('#rec'); if (p) p.innerHTML = '';
     const mime = (mr.mimeType || (chunks[0] && chunks[0].type) || 'audio/mp4');
     const blob = new Blob(chunks, { type: mime });
