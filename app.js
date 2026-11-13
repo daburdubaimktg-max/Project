@@ -1,11 +1,14 @@
 'use strict';
 /* NEE — Nishant's Eyes and Ears. UI layer. Keep APP_VERSION in step with CACHE_VERSION in sw.js. */
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 (function () {
   const TYPES = [['MV', 'Market visit'], ['HV', 'Home visit'], ['TR', 'Trade'], ['SL', 'Salon'],
     ['IN', 'Informal'], ['MT', 'Meeting'], ['TH', 'Thought']];
-  const TYPE_NAME = Object.fromEntries(TYPES);
+  // The seven built-in categories stay; the user can add their own (2-letter code + name).
+  let customTypes = [];
+  const allTypes = () => [...TYPES, ...customTypes];
+  const typeName = (code, v) => { const t = allTypes().find(x => x[0] === code); return t ? t[1] : (v && v.visit_type_name) || code; };
   const OUTLETS = ['spaza', 'informal/hawker', 'salon', 'pharmacy chain', 'independent pharmacy', 'supermarket chain',
     'discounter', 'wholesaler/cash & carry', 'beauty store', 'home', 'office', 'other'];
   const DEFAULT_COUNTRIES = ['ZAF', 'NGA', 'GHA', 'KEN', 'EGY'];
@@ -31,6 +34,8 @@ const APP_VERSION = '1.1.0';
     trash: svg('<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/>'),
     calendar: svg('<rect x="4" y="6" width="16" height="14" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>'),
     check: svg('<path d="M5 12l5 5 9-10"/>'),
+    list: svg('<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>'),
+    chart: svg('<path d="M5 20V11M12 20V4M19 20v-6"/>'),
     book: svg('<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11M9 8h6"/>'),
   };
   const REC_IDLE = `${ICON.mic}<span>Record</span>`, REC_ON = `${ICON.stop}<span>Stop</span>`;
@@ -44,6 +49,7 @@ const APP_VERSION = '1.1.0';
   const isStandalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
 
   let countries = DEFAULT_COUNTRIES.slice();
+  let claudeLink = '';
   let filters = { q: '', type: '', country: '', label: '' };
   let cur = null;            // visit open in the editor
   let saveTimer = null;
@@ -118,6 +124,7 @@ const APP_VERSION = '1.1.0';
     const h = location.hash;
     if (h.startsWith('#/v/')) { view = 'visit'; return renderVisit(decodeURIComponent(h.slice(4))); }
     if (h === '#/settings') { view = 'settings'; return renderSettings(); }
+    if (h === '#/summary') { view = 'summary'; return renderSummary(); }
     if (h === '#/bin') { view = 'bin'; return renderBin(); }
     view = 'home';
     await renderHome();
@@ -146,7 +153,9 @@ const APP_VERSION = '1.1.0';
     const all = (await DB.getVisits()).filter(v => !v.deleted_at);
     const labels = [...new Set(all.flatMap(v => v.labels))].sort();
     const ctry = [...new Set(all.map(v => v.country))].sort();
-    const types = TYPES.filter(t => all.some(v => v.visit_type === t[0]));
+    const present = new Set(all.map(v => v.visit_type));
+    const types = [...allTypes().filter(t => present.has(t[0])),
+      ...[...present].filter(c => !allTypes().some(t => t[0] === c)).map(c => [c, typeName(c, all.find(v => v.visit_type === c))])];
     if (filters.type && !types.some(t => t[0] === filters.type)) filters.type = '';
     if (filters.country && !ctry.includes(filters.country)) filters.country = '';
     if (filters.label && !labels.includes(filters.label)) filters.label = '';
@@ -164,7 +173,8 @@ const APP_VERSION = '1.1.0';
         ${labels.length ? `<select id="fLabel" aria-label="Filter by label">${options(labels, filters.label, 'All labels')}</select>` : ''}
       </div>` : ''}` : ''}
       <div id="list"></div>
-      <button class="fab" id="fab">${ICON.plus}New visit</button>`;
+      <button class="fab" id="fab">${ICON.plus}New visit</button>
+      ${tabbar('home')}`;
     $('#toSettings').onclick = () => go('#/settings');
     $('#fab').onclick = () => newVisitSheet(all);
     const drawTypes = () => {
@@ -197,7 +207,7 @@ const APP_VERSION = '1.1.0';
     if (filters.label && !v.labels.includes(filters.label)) return false;
     const q = filters.q.trim().toLowerCase();
     if (!q) return true;
-    const hay = [v.visit_id, TYPE_NAME[v.visit_type], v.text_raw, v.typed_notes, v.city, v.suburb, v.outlet_type, v.who_role,
+    const hay = [v.visit_id, typeName(v.visit_type, v), v.text_raw, v.typed_notes, v.city, v.suburb, v.outlet_type, v.who_role,
       v.labels.join(' '), v.checklist.map(c => c.text).join(' ')].join('\n').toLowerCase();
     return q.split(/\s+/).every(w => hay.includes(w));
   }
@@ -212,7 +222,7 @@ const APP_VERSION = '1.1.0';
     const exported = v.exported_at && Date.parse(v.exported_at) >= Date.parse(v.updated_at);
     return `<div class="card ${v.colour ? 'col-' + esc(v.colour) : ''}">
       <a href="#/v/${encodeURIComponent(v.visit_id)}">
-        <div class="ctitle"><span class="tbadge">${esc(v.visit_type)}</span><span class="ctext">${esc(TYPE_NAME[v.visit_type] || v.visit_type)}${place ? ` · ${esc(place)}` : ''}</span></div>
+        <div class="ctitle"><span class="tbadge">${esc(v.visit_type)}</span><span class="ctext">${esc(typeName(v.visit_type, v))}${place ? ` · ${esc(place)}` : ''}</span></div>
         <div class="cid">${esc(v.visit_id)} · ${esc(v.start_time)}${v.outlet_type ? ` · ${esc(v.outlet_type)}` : ''}</div>
         ${snip ? `<div class="snip">${esc(snip)}</div>` : '<div class="snip muted">Nothing captured yet</div>'}
         <div class="chips">${needsWarning(v) ? '<span class="chip warn">⚠ Recorded without consent</span>' : ''}${counts}${todo ? `<span class="chip">${ICON.check}${todo} to do</span>` : ''}${v.labels.map(l => `<span class="chip">${esc(l)}</span>`).join('')}${exported ? '<span class="chip ok">Exported</span>' : ''}</div>
@@ -269,7 +279,7 @@ const APP_VERSION = '1.1.0';
     let type = '', consent = 'no', outletTouched = false;
     const o = overlay(`
       <h2>New visit</h2>
-      <div class="types" id="nvTypes">${TYPES.map(t => `<button class="btn" data-t="${t[0]}"><strong>${t[0]}</strong>${esc(t[1])}</button>`).join('')}</div>
+      <div class="types" id="nvTypes"></div>
       <div class="grid2">
         <label class="f">Country<select id="nvCountry">${options(countries, 'ZAF')}</select></label>
         <label class="f">City<input type="text" id="nvCity" list="dlCity" ${noAttr}></label>
@@ -286,12 +296,19 @@ const APP_VERSION = '1.1.0';
       <div class="row end"><button class="btn" id="nvCancel">Cancel</button><button class="btn primary grow" id="nvCreate" disabled>Choose a type</button></div>`);
     const create = $('#nvCreate', o), outlet = $('#nvOutlet', o);
     outlet.onchange = () => { outletTouched = true; };
-    $('#nvTypes', o).onclick = e => {
-      const b = e.target.closest('[data-t]'); if (!b) return;
-      type = b.dataset.t;
-      o.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', x === b));
+    const tiles = () => {
+      $('#nvTypes', o).innerHTML = allTypes().map(t => `<button class="btn ${t[0] === type ? 'on' : ''}" data-t="${t[0]}"><strong>${t[0]}</strong>${esc(t[1])}</button>`).join('') +
+        `<button class="btn dashed" data-newtype>${ICON.plus}New category</button>`;
+    };
+    const pick = code => {
+      type = code; tiles();
       if (!outletTouched) outlet.value = type === 'HV' ? 'home' : type === 'SL' ? 'salon' : '';
-      create.disabled = false; create.textContent = `Start ${TYPE_NAME[type].toLowerCase()}`;
+      create.disabled = false; create.textContent = `Start ${typeName(type).toLowerCase()}`;
+    };
+    tiles();
+    $('#nvTypes', o).onclick = e => {
+      if (e.target.closest('[data-newtype]')) return addTypeSheet(pick);
+      const b = e.target.closest('[data-t]'); if (b) pick(b.dataset.t);
     };
     $('#nvConsent', o).onclick = e => {
       const b = e.target.closest('[data-c]'); if (!b) return;
@@ -304,9 +321,143 @@ const APP_VERSION = '1.1.0';
       try {
         const v = await DB.createVisit({ visit_type: type, country: $('#nvCountry', o).value, city: $('#nvCity', o).value,
           suburb: $('#nvSuburb', o).value, outlet_type: outlet.value, who_role: $('#nvWho', o).value,
-          consent_stated: consent }, APP_VERSION);
+          consent_stated: consent, visit_type_name: (customTypes.find(t => t[0] === type) || [])[1] || '' }, APP_VERSION);
         o.remove(); go(`#/v/${encodeURIComponent(v.visit_id)}`);
       } catch (e) { create.disabled = false; toast('Could not create the visit — storage error.'); }
+    };
+  }
+
+  /* ---------- custom categories ---------- */
+  function suggestCode(name) {
+    const w = name.toUpperCase().replace(/[^A-Z ]/g, '').split(/\s+/).filter(Boolean), used = new Set(allTypes().map(t => t[0])), c = [];
+    if (w.length > 1) c.push(w[0][0] + w[1][0]);
+    if (w[0]) for (let i = 1; i < w[0].length; i++) c.push(w[0][0] + w[0][i]);
+    return c.find(x => !used.has(x)) || '';
+  }
+  function addTypeSheet(done) {
+    let codeTouched = false;
+    const o = overlay(`<h2>New category</h2>
+      <label class="f">Name<input type="text" id="ntName" placeholder="e.g. Competitor store" maxlength="30" autocomplete="off" autocorrect="off" spellcheck="false"></label>
+      <label class="f">2-letter code<input type="text" id="ntCode" maxlength="2" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"></label>
+      <p class="small muted" id="ntHint">The code appears in visit IDs.</p>
+      <div class="row end"><button class="btn" id="ntCancel">Cancel</button><button class="btn primary grow" id="ntSave">Add category</button></div>`);
+    const name = $('#ntName', o), code = $('#ntCode', o);
+    const hint = () => { $('#ntHint', o).textContent = /^[A-Za-z]{2}$/.test(code.value) ? `Visit IDs will look like AFC-ZAF-${U.ymd().replace(/-/g, '')}-${code.value.toUpperCase()}01.` : 'The code appears in visit IDs.'; };
+    name.oninput = () => { if (!codeTouched) { code.value = suggestCode(name.value); hint(); } };
+    code.oninput = () => { codeTouched = true; hint(); };
+    $('#ntCancel', o).onclick = () => o.remove();
+    $('#ntSave', o).onclick = async () => {
+      const n = name.value.trim(), c = code.value.trim().toUpperCase();
+      if (!n) return toast('Give the category a name');
+      if (!/^[A-Z]{2}$/.test(c)) return toast('The code must be 2 letters');
+      if (allTypes().some(t => t[0] === c)) return toast(`${c} is already used by “${typeName(c)}”`);
+      if (allTypes().some(t => t[1].toLowerCase() === n.toLowerCase())) return toast('That category already exists');
+      customTypes.push([c, n]); await DB.setMeta('customTypes', customTypes);
+      o.remove(); toast(`Added ${n}`); if (done) done(c);
+    };
+  }
+
+  /* ---------- sending to the Claude Project ---------- */
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall through to the older method */ }
+    const t = document.createElement('textarea');
+    t.value = text; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(t); t.select(); t.setSelectionRange(0, text.length);
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    t.remove(); return ok;
+  }
+  // Copies the text, then shows the next step: open the project and paste.
+  async function claudeStep(box, text, what) {
+    if (!await copyText(text)) { box.innerHTML = '<p class="warnbox">Could not copy on this device. Use Share instead.</p>'; return false; }
+    box.innerHTML = `<div class="box next"><strong>${ICON.check}${esc(what)} copied</strong>
+      <p class="small">${claudeLink ? 'Open your project, paste into the chat and send.' : 'Open your Claude Project, paste into the chat and send. Add your project link in Settings to open it from here.'}</p>
+      ${claudeLink ? `<a class="btn primary block" href="${esc(claudeLink)}" target="_blank" rel="noopener">Open my Claude Project</a>` : ''}</div>`;
+    return true;
+  }
+
+  /* ---------- summary ---------- */
+  let sumRange = 'week';
+  function rangeOf(k) {
+    const t = new Date(), y = t.getFullYear(), m = t.getMonth(), d0 = new Date(y, m, t.getDate());
+    if (k === 'today') return [U.ymd(d0), U.ymd(d0), 'Today'];
+    if (k === 'week') {
+      const a = new Date(d0); a.setDate(a.getDate() - (d0.getDay() + 6) % 7);
+      const b = new Date(a); b.setDate(b.getDate() + 6);
+      return [U.ymd(a), U.ymd(b), 'This week'];
+    }
+    if (k === 'month') return [U.ymd(new Date(y, m, 1)), U.ymd(new Date(y, m + 1, 0)), 'This month'];
+    return ['', '9999-99-99', 'All time'];
+  }
+  function summarise(vs) {
+    const tally = (arr, key) => { const o = {}; for (const x of arr) { const k = key(x); if (k) o[k] = (o[k] || 0) + 1; } return Object.entries(o).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])); };
+    const media = vs.flatMap(live), kind = k => media.filter(x => x.kind === k);
+    return {
+      n: vs.length, days: new Set(vs.map(v => v.date)).size,
+      photos: kind('photo').length, videos: kind('video').length, audio: kind('audio').length,
+      audioMin: Math.round(kind('audio').reduce((t, x) => t + (x.duration_s || 0), 0) / 60),
+      byType: tally(vs, v => typeName(v.visit_type, v)), byPlace: tally(vs, v => v.city || 'No city given'),
+      byLabel: tally(vs.flatMap(v => v.labels), l => l),
+      todos: vs.flatMap(v => v.checklist.filter(c => !c.done && c.text.trim()).map(c => ({ v, text: c.text }))),
+      pending: vs.filter(v => !v.exported_at || Date.parse(v.updated_at) > Date.parse(v.exported_at)),
+      noConsent: vs.filter(needsWarning),
+    };
+  }
+  function summaryText(vs, s, from, to, label) {
+    const span = label === 'All time' ? 'all time' : from === to ? fmtDate(from) : `${fmtDate(from)} to ${fmtDate(to)}`;
+    const list = arr => arr.map(x => `${x[0]} ${x[1]}`).join(', ') || 'none';
+    const L = [`FIELD SUMMARY — Eyes & Ears (NEE) — ${label}: ${span}`, '',
+      `Visits: ${s.n} over ${s.days} day${s.days === 1 ? '' : 's'}`, `By category: ${list(s.byType)}`, `By place: ${list(s.byPlace)}`,
+      `Captured: ${s.photos} photos, ${s.videos} videos, ${s.audio} audio (${s.audioMin} min)`];
+    if (s.byLabel.length) L.push(`Labels: ${list(s.byLabel)}`);
+    L.push(`Not yet exported: ${s.pending.length}`);
+    if (s.noConsent.length) L.push(`Recorded with consent = no: ${s.noConsent.map(v => v.visit_id).join(', ')}`);
+    L.push('', `Open to-dos (${s.todos.length}):`);
+    for (const t of s.todos) L.push(`- [${t.v.visit_id}] ${t.text}`);
+    L.push('', 'Visits:');
+    for (const v of vs.slice().sort((a, b) => a.visit_id.localeCompare(b.visit_id))) {
+      L.push(`- ${v.visit_id} · ${typeName(v.visit_type, v)}${placeOf(v) ? ' · ' + placeOf(v) : ''}${v.outlet_type ? ' · ' + v.outlet_type : ''} · ${v.date} ${v.start_time}`);
+    }
+    return L.join('\n') + '\n';
+  }
+  const tabbar = on => `<nav class="tabbar" aria-label="Sections"><a href="#/" class="${on === 'home' ? 'on' : ''}"${on === 'home' ? ' aria-current="page"' : ''}>${ICON.list}Visits</a>
+    <a href="#/summary" class="${on === 'summary' ? 'on' : ''}"${on === 'summary' ? ' aria-current="page"' : ''}>${ICON.chart}Summary</a></nav>`;
+
+  async function renderSummary() {
+    const all = (await DB.getVisits()).filter(v => !v.deleted_at);
+    const [from, to, label] = rangeOf(sumRange);
+    const vs = all.filter(v => v.date >= from && v.date <= to), s = summarise(vs);
+    const bars = rows => { const max = Math.max(1, ...rows.map(r => r[1])); return rows.map(r => `<div class="barrow"><span class="bl">${esc(r[0])}</span><span class="bt"><span style="width:${Math.round(r[1] / max * 100)}%"></span></span><span class="bn">${r[1]}</span></div>`).join(''); };
+    root.innerHTML = `
+      <header class="bar home"><div class="grow"><h1>Summary</h1>
+        <div class="today">${label === 'All time' ? 'Everything on this device' : from === to ? esc(fmtDate(from)) : `${esc(fmtDate(from))} – ${esc(fmtDate(to))}`}</div></div></header>
+      <div class="tchips" id="ranges" role="group" aria-label="Period">${[['today', 'Today'], ['week', 'This week'], ['month', 'This month'], ['all', 'All time']].map(r =>
+        `<button class="tchip ${sumRange === r[0] ? 'on' : ''}" data-r="${r[0]}" aria-pressed="${sumRange === r[0]}">${r[1]}</button>`).join('')}</div>
+      ${!vs.length ? `<div class="empty">${ICON.chart}<strong>No visits in this period</strong>Pick another period, or start a visit from the Visits tab.</div>` : `
+      <div class="stats">
+        <div class="stat"><b>${s.n}</b><span>visit${s.n === 1 ? '' : 's'} · ${s.days} day${s.days === 1 ? '' : 's'}</span></div>
+        <div class="stat"><b>${s.photos}</b><span>photo${s.photos === 1 ? '' : 's'}</span></div>
+        <div class="stat"><b>${s.videos}</b><span>video${s.videos === 1 ? '' : 's'}</span></div>
+        <div class="stat"><b>${s.audioMin}<small> min</small></b><span>${s.audio} audio</span></div>
+      </div>
+      ${s.pending.length ? `<div class="banner"><span class="grow">${s.pending.length} of ${s.n} visit${s.n === 1 ? '' : 's'} not exported yet.</span></div>` : '<p class="chips"><span class="chip ok">All visits in this period are exported</span></p>'}
+      ${s.noConsent.length ? `<div class="warnbox">⚠ ${s.noConsent.length} visit${s.noConsent.length === 1 ? ' has' : 's have'} audio or video with consent marked No.</div>` : ''}
+      <h3>By category</h3><div class="box">${bars(s.byType)}</div>
+      <h3>By place</h3><div class="box">${bars(s.byPlace.slice(0, 8))}</div>
+      ${s.byLabel.length ? `<h3>Labels</h3><div class="chips">${s.byLabel.map(l => `<span class="chip">${esc(l[0])} · ${l[1]}</span>`).join('')}</div>` : ''}
+      <h3>Open to-dos <span class="count">${s.todos.length}</span></h3>
+      ${s.todos.length ? `<div class="box todos">${s.todos.slice(0, 30).map(t => `<a href="#/v/${encodeURIComponent(t.v.visit_id)}"><span>${esc(t.text)}</span><small>${esc(typeName(t.v.visit_type, t.v))}${placeOf(t.v) ? ' · ' + esc(placeOf(t.v)) : ''}</small></a>`).join('')}</div>` : '<p class="muted">Nothing open.</p>'}
+      <div class="actions">
+        <button class="btn primary block" id="sumClaude">${ICON.share}Send summary to Claude Project</button>
+        <div id="sumNext"></div>
+        ${navigator.share ? `<button class="btn block" id="sumShare">Share summary…</button>` : ''}
+      </div>`}
+      ${tabbar('summary')}`;
+    $('#ranges').onclick = e => { const b = e.target.closest('[data-r]'); if (b) { sumRange = b.dataset.r; renderSummary(); } };
+    if (!vs.length) return;
+    const text = summaryText(vs, s, from, to, label);
+    $('#sumClaude').onclick = () => claudeStep($('#sumNext'), text, 'Summary');
+    if ($('#sumShare')) $('#sumShare').onclick = async () => {
+      try { await navigator.share({ text }); } catch (e) { if (e.name !== 'AbortError') toast('Share did not open. Use “Send summary to Claude Project”.'); }
     };
   }
 
@@ -325,7 +476,7 @@ const APP_VERSION = '1.1.0';
         <button class="btn icon" id="pin" aria-label="Pin">${ICON.pin}</button>
         <button class="btn icon" id="more" aria-label="More actions">${ICON.more}</button></header>
       <div class="vhead">
-        <div class="vtitle"><span class="tbadge">${esc(v.visit_type)}</span><h1>${esc(TYPE_NAME[v.visit_type] || v.visit_type)}</h1></div>
+        <div class="vtitle"><span class="tbadge">${esc(v.visit_type)}</span><h1>${esc(typeName(v.visit_type, v))}</h1></div>
         <button class="vsub" id="editDetails"><span id="sum"></span>${ICON.edit}</button>
         <div class="chips"><button class="chip vid" id="copyId" aria-label="Copy visit ID">${esc(v.visit_id)}</button><span class="chip" id="when"></span><span class="chip" id="cchip"></span></div>
       </div>
@@ -396,7 +547,7 @@ const APP_VERSION = '1.1.0';
 
   // Secondary actions live in one menu so the capture screen stays clean.
   function moreSheet() {
-    const o = overlay(`<h2>${esc(TYPE_NAME[cur.visit_type] || cur.visit_type)}</h2>
+    const o = overlay(`<h2>${esc(typeName(cur.visit_type, cur))}</h2>
       <div class="menu">
         <button class="btn block" id="expVisit">${ICON.share}Export this visit</button>
         <button class="btn block" id="expDay">${ICON.share}Export whole day · ${esc(dayLabel(cur.date))}</button>
@@ -429,7 +580,7 @@ const APP_VERSION = '1.1.0';
       <label class="f">Who — role or first name only<input type="text" data-f="who_role" value="${esc(v.who_role)}" ${noAttr}></label>
       <div class="flabel">Did they say yes to being recorded?</div>
       <div class="seg" id="consent"><button class="btn" data-c="yes">Yes, consent stated</button><button class="btn" data-c="no">No</button></div>
-      <p class="small muted">${esc(TYPE_NAME[v.visit_type] || v.visit_type)} in ${esc(v.country)} on ${esc(fmtDate(v.date))}. Type and country are part of the visit ID and stay fixed.${v.date_edit_reason ? ` Date edited: ${esc(v.date_edit_reason)}` : ''}</p>
+      <p class="small muted">${esc(typeName(v.visit_type, v))} in ${esc(v.country)} on ${esc(fmtDate(v.date))}. Type and country are part of the visit ID and stay fixed.${v.date_edit_reason ? ` Date edited: ${esc(v.date_edit_reason)}` : ''}</p>
       <div class="row end"><button class="btn primary grow" id="dDone">Done</button></div>`);
     o.querySelectorAll('[data-f]').forEach(el => {
       el.oninput = el.onchange = () => { cur[el.dataset.f] = el.value; drawHead(); scheduleSave(); };
@@ -651,11 +802,15 @@ const APP_VERSION = '1.1.0';
     };
     $('.sheet', o).innerHTML = `<h2>Package ready</h2>
       <ul class="plain">${pack.files.map(f => `<li><strong>${esc(f.name)}</strong> · ${fmtBytes(f.size)}</li>`).join('')}</ul>
-      <p class="muted">${pack.ids.length} visit${pack.ids.length > 1 ? 's' : ''}. Share to the Claude app, Files, OneDrive or WhatsApp.</p>
+      <p class="muted">${pack.ids.length} visit${pack.ids.length > 1 ? 's' : ''}. Nothing leaves this phone until you choose one of these.</p>
       <div class="actions">
-        ${canShare ? '<button class="btn primary block" id="exShare">Share…</button>' : ''}
-        <button class="btn ${canShare ? '' : 'primary'} block" id="exSave">Save to this device</button>
-        <button class="btn block" id="exClose">Close</button></div>`;
+        <button class="btn primary block" id="exClaude">${ICON.share}Send text to Claude Project</button>
+        <div id="exNext"></div>
+        ${canShare ? '<button class="btn block" id="exShare">Share .zip with photos and audio…</button>' : ''}
+        <button class="btn block" id="exSave">Save .zip to this device</button>
+        <button class="btn block ghost" id="exClose">Close</button></div>
+      <p class="small muted">“Send text” copies the visit text with the PACKAGE command, ready to paste into your project chat. Photos, videos and audio travel only in the .zip.</p>`;
+    $('#exClaude', o).onclick = async () => { if (await claudeStep($('#exNext', o), `PACKAGE\n\n${pack.text}`, 'Package text')) await mark(); };
     $('#exClose', o).onclick = () => { o.remove(); if (!cur && !location.hash.startsWith('#/v/')) route(); };
     if (canShare) $('#exShare', o).onclick = async () => {
       try { await navigator.share({ files: pack.files, title: pack.files[0].name }); await mark(); toast('Shared. Marked as exported.'); }
@@ -675,7 +830,11 @@ const APP_VERSION = '1.1.0';
     const files = [...input.files]; input.value = '';
     let added = 0, skipped = 0, invalid = 0;
     for (const f of files) {
-      try { const r = await Exporter.importZip(f); added += r.added.length; skipped += r.skipped.length; invalid += r.invalid; }
+      try {
+        const r = await Exporter.importZip(f); added += r.added.length; skipped += r.skipped.length; invalid += r.invalid;
+        for (const [c, n] of Object.entries(r.typeNames)) if (!allTypes().some(t => t[0] === c)) customTypes.push([c, n]);
+        await DB.setMeta('customTypes', customTypes);
+      }
       catch (e) { invalid++; }
     }
     toast(`Imported ${added} visit${added === 1 ? '' : 's'}; ${skipped} already here (skipped)${invalid ? `; ${invalid} not readable` : ''}.`, 7000);
@@ -698,6 +857,13 @@ const APP_VERSION = '1.1.0';
       <h3>Storage on this device</h3>
       <div class="box"><p><strong>${fmtBytes(est.usage)}</strong> used${est.quota ? ` of about ${fmtBytes(est.quota)} available` : ''} · ${all.filter(v => !v.deleted_at).length} visits</p>
         <p>${persisted ? 'Storage is protected (persistent).' : 'Storage is <strong>not</strong> protected. Install the app to the Home Screen and export every evening.'}</p></div>
+      <h3>Visit categories</h3>
+      <div class="box"><div class="chips" id="cats"></div>
+        <p class="small muted">The seven built-in categories stay. Removing one you added keeps its past visits.</p>
+        <button class="btn block" id="catAdd">${ICON.plus}Add category</button></div>
+      <h3>Claude Project</h3>
+      <div class="box"><p>Paste the web link of your Claude Project so the app can open it after an export.</p>
+        <div class="addrow"><input type="text" id="clLink" inputmode="url" placeholder="https://claude.ai/project/…" aria-label="Claude Project link" value="${esc(claudeLink)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"><button class="btn" id="clSave">Save</button></div></div>
       <h3>Countries</h3>
       <div class="box"><div class="chips" id="ctry"></div>
         <div class="addrow"><input type="text" id="ctryNew" maxlength="3" placeholder="3-letter code, e.g. TZA" aria-label="New country code" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"><button class="btn" id="ctryAdd">Add</button></div></div>
@@ -712,6 +878,20 @@ const APP_VERSION = '1.1.0';
     $('#back').onclick = () => go('#/');
     $('#toBin').onclick = () => go('#/bin');
     $('#impIn').onchange = e => importFiles(e.target);
+    const drawCats = () => {
+      $('#cats').innerHTML = allTypes().map(t => `<span class="chip"><b class="mono">${esc(t[0])}</b>&nbsp;${esc(t[1])}${TYPES.includes(t) ? '' : `<button data-rt="${esc(t[0])}" aria-label="Remove ${esc(t[1])}">✕</button>`}</span>`).join('');
+    };
+    $('#cats').onclick = async e => {
+      const b = e.target.closest('[data-rt]'); if (!b) return;
+      customTypes = customTypes.filter(t => t[0] !== b.dataset.rt); await DB.setMeta('customTypes', customTypes); drawCats();
+    };
+    $('#catAdd').onclick = () => addTypeSheet(drawCats);
+    drawCats();
+    $('#clSave').onclick = async () => {
+      const u = $('#clLink').value.trim();
+      if (u && !/^https:\/\/[^\s"'<>]+$/.test(u)) return toast('The link must start with https://');
+      claudeLink = u; await DB.setMeta('claudeLink', u); toast(u ? 'Project link saved' : 'Project link removed');
+    };
     const drawC = () => {
       $('#ctry').innerHTML = countries.map((c, i) => `<span class="chip">${esc(c)}${c === 'ZAF' ? '' : `<button data-rc="${i}" aria-label="Remove ${esc(c)}">✕</button>`}</span>`).join('');
     };
@@ -819,6 +999,8 @@ const APP_VERSION = '1.1.0';
   (async function start() {
     try {
       countries = await DB.getMeta('countries', DEFAULT_COUNTRIES.slice());
+      customTypes = await DB.getMeta('customTypes', []);
+      claudeLink = await DB.getMeta('claudeLink', '');
       if (!countries.includes('ZAF')) countries.unshift('ZAF');
       await DB.purgeExpired();
     } catch (e) {

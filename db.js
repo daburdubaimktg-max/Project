@@ -89,7 +89,7 @@ const DB = (() => {
             schema_version: 'NEE-v1', app_version: appVersion,
             country: f.country, city: f.city || '', suburb: f.suburb || '',
             date, start_time: U.hm(now), end_time: U.hm(now),
-            visit_type: f.visit_type, outlet_type: f.outlet_type || '',
+            visit_type: f.visit_type, visit_type_name: f.visit_type_name || '', outlet_type: f.outlet_type || '',
             who_role: f.who_role || '', consent_stated: f.consent_stated === 'yes' ? 'yes' : 'no',
             date_edit_reason: '', labels: [], pinned: false, colour: '',
             text_raw: '', typed_notes: '', checklist: [], media: [],

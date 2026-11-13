@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 — 2026-11-13
+
+- Custom visit categories: add your own (name + 2-letter code) from New visit or Settings; the seven built-in ones stay.
+- Summary tab: visits, media, categories, places, labels, open to-dos and export status for today, this week, this month or all time.
+- Send to Claude Project: copy the package text (with the PACKAGE command) or the summary, then open the project from a saved link.
+- Package change: visits in a custom category carry `visit_type_name` in visit.json and show as `Type: CS (Name)` in visit.md.
+
 ## 1.1.0 — 2026-11-13
 
 Clearer flow, same data and features. Visit cards are titled by visit type and place, with the ID underneath. The visit screen shows a title, place, saved status and the text box first; photos and videos appear as a grid that opens full size; export, details, date change and delete moved into a ··· menu. One-tap type filters, Today / Yesterday headings, a guided empty state, and outlet type pre-filled for home and salon visits.

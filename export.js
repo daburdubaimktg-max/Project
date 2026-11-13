@@ -3,7 +3,7 @@
 
 const Exporter = (() => {
   function toJson(v) {
-    return {
+    const j = {
       visit_id: v.visit_id, schema_version: 'NEE-v1', app_version: v.app_version,
       country: v.country, city: v.city, suburb: v.suburb, date: v.date,
       start_time: v.start_time, end_time: v.end_time,
@@ -17,13 +17,15 @@ const Exporter = (() => {
         captured_at: m.captured_at, duration_s: m.duration_s,
       })),
     };
+    if (v.visit_type_name) j.visit_type_name = v.visit_type_name;   // only for categories the user added
+    return j;
   }
 
   function toMd(v) {
     const j = toJson(v);
     const lines = [
       `SRC:PACKAGE NEE-v1 ${j.visit_id}`,
-      `Type: ${j.visit_type}`, `Country: ${j.country}`, `City: ${j.city}`, `Suburb: ${j.suburb}`,
+      `Type: ${j.visit_type}${j.visit_type_name ? ` (${j.visit_type_name})` : ''}`, `Country: ${j.country}`, `City: ${j.city}`, `Suburb: ${j.suburb}`,
       `Outlet: ${j.outlet_type}`, `Who: ${j.who_role}`, `Consent: ${j.consent_stated}`,
       `Date: ${j.date}`, `Times: ${j.start_time}–${j.end_time}`,
     ];
@@ -52,7 +54,7 @@ const Exporter = (() => {
   async function visitZip(v) {
     const zip = new JSZip();
     await addVisit(zip, v);
-    return { files: [await build(zip, `${v.visit_id}.zip`)], ids: [v.visit_id] };
+    return { files: [await build(zip, `${v.visit_id}.zip`)], ids: [v.visit_id], text: toMd(v) };
   }
 
   // One package per country for the day, each visit in its own folder.
@@ -67,7 +69,7 @@ const Exporter = (() => {
       for (const v of byCountry[c]) await addVisit(zip.folder(v.visit_id), v);
       files.push(await build(zip, `AFC-${c}-${date.replace(/-/g, '')}_DAY.zip`));
     }
-    return { files, ids: visits.map(v => v.visit_id) };
+    return { files, ids: visits.map(v => v.visit_id), text: visits.map(toMd).join('\n---\n\n') };
   }
 
   const str = x => (typeof x === 'string' ? x : '');
@@ -75,7 +77,7 @@ const Exporter = (() => {
   async function importZip(file) {
     const zip = await JSZip.loadAsync(file);
     const entries = Object.keys(zip.files).filter(n => /(^|\/)visit\.json$/.test(n) && !n.startsWith('__MACOSX'));
-    const res = { added: [], skipped: [], invalid: 0 };
+    const res = { added: [], skipped: [], invalid: 0, typeNames: {} };
     for (const name of entries) {
       let j;
       try { j = JSON.parse(await zip.file(name).async('string')); } catch (e) { res.invalid++; continue; }
@@ -99,7 +101,7 @@ const Exporter = (() => {
         visit_id: j.visit_id, schema_version: 'NEE-v1', app_version: str(j.app_version),
         country: str(j.country), city: str(j.city), suburb: str(j.suburb), date: str(j.date),
         start_time: str(j.start_time), end_time: str(j.end_time),
-        visit_type: str(j.visit_type), outlet_type: str(j.outlet_type), who_role: str(j.who_role),
+        visit_type: str(j.visit_type), visit_type_name: str(j.visit_type_name), outlet_type: str(j.outlet_type), who_role: str(j.who_role),
         consent_stated: j.consent_stated === 'yes' ? 'yes' : 'no', date_edit_reason: str(j.date_edit_reason),
         labels: Array.isArray(j.labels) ? j.labels.filter(l => typeof l === 'string') : [],
         pinned: !!j.pinned, colour: str(j.colour),
@@ -107,6 +109,7 @@ const Exporter = (() => {
         checklist: (Array.isArray(j.checklist) ? j.checklist : []).map(c => ({ text: str(c && c.text), done: !!(c && c.done) })),
         media, created_at: now, updated_at: now, exported_at: now, imported_at: now, deleted_at: null, media_seq: seq,
       };
+      if (v.visit_type_name && /^[A-Z]{2}$/.test(v.visit_type)) res.typeNames[v.visit_type] = v.visit_type_name;
       (await DB.importVisit(v, blobs) ? res.added : res.skipped).push(v.visit_id);
     }
     return res;

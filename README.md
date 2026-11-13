@@ -15,6 +15,12 @@ A personal field-capture web app for market visits. It installs to the iPhone Ho
 3. Every evening: **Export day** → **Share…** → the Claude app (type `PACKAGE`) and a backup copy to Files or OneDrive.
 4. On the laptop: **Settings → Import .zip**.
 
+**Categories:** add your own visit categories from **New visit → New category** or **Settings**.
+
+**Summary tab:** totals, categories, places and open to-dos for a chosen period, with **Send summary to Claude Project**.
+
+**Claude Project link:** paste your project's web link in **Settings → Claude Project**. After an export, **Send text to Claude Project** copies the package text and offers a button to open the project; paste and send. Photos, videos and audio travel only in the .zip.
+
 ## Limits to know
 
 - Recording stops if the screen locks or you switch apps. Keep the screen on.
