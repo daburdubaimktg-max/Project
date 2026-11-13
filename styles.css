@@ -25,7 +25,7 @@ html.lock, html.lock body { overflow: hidden; }
 button, .btn, summary, .chip, h1, h2, h3 { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 /* Solid strip behind the iPhone status bar so content never scrolls under the clock. */
 body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top); background: #0d1411; z-index: 25; }
-body.kb .capture, body.kb .fab, body.kb .tabbar { display: none; }
+body.kb .fab, body.kb .tabbar { display: none; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
@@ -337,3 +337,9 @@ body.has-update .bar { top: calc(env(safe-area-inset-top) + 48px); }
 @media (min-width: 800px) { .fab { right: calc(50vw - 362px); } }
 /* The sheet's action row stays in reach without covering fields. */
 .sheet .row.end { z-index: 1; box-shadow: 0 -10px 12px -6px var(--bg); }
+
+/* ---- v1.4.1: capture bar stays above the keyboard ---- */
+html { scroll-padding-bottom: 96px; }
+.capture { bottom: var(--kb, 0px); }
+body.kbup .capture { padding-top: 6px; padding-bottom: 6px; box-shadow: 0 -6px 16px rgba(0,0,0,.18); }
+body.kbup .capture .btn { min-height: 48px; }

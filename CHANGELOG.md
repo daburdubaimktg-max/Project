@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.1 — 2026-11-13
+
+- Photo, Record and Video stay visible while typing, lifted to sit just above the keyboard. The Visits/Summary tabs and New visit button still step aside while the keyboard is up.
+
 ## 1.4.0 — 2026-11-13
 
 Fixes from a 15-tester audit (simulated testers in a test browser, not real iPhones).

@@ -1,6 +1,6 @@
 'use strict';
 /* NEE — Nishant's Eyes and Ears. UI layer. Keep APP_VERSION in step with CACHE_VERSION in sw.js. */
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.4.1';
 
 (function () {
   const TYPES = [['MV', 'Market visit'], ['HV', 'Home visit'], ['TR', 'Trade'], ['SL', 'Salon'],
@@ -655,6 +655,8 @@ const APP_VERSION = '1.4.0';
       const n = $(`#colours [data-col="${cur.colour}"]`); if (n) n.focus({ preventScroll: true });
     };
     $('#recBtn').onclick = () => (Rec.mr ? stopRec() : startRec());
+    // Tapping Record must not take the cursor out of the text box, so dictation can carry on.
+    $('#recBtn').onmousedown = e => { if (typingIn(document.activeElement)) e.preventDefault(); };
     for (const [btn, input, kind] of [['#photoBtn', '#photoIn', 'photo'], ['#videoBtn', '#videoIn', 'video']]) {
       $(input).onchange = e => addFiles(e.target, kind);
       $(btn).onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $(input).click(); } };
@@ -1260,8 +1262,20 @@ const APP_VERSION = '1.4.0';
     root.inert = open;
   }).observe(document.body, { childList: true });
 
-  // On touch devices, hide the bottom bars while the keyboard is up (they jump around on iPhone otherwise),
-  // and let a tap on empty space put the keyboard away. The bars only come back once the finger is lifted,
+  // Photo / Record / Video stay visible while typing: the bar is lifted to sit just above the keyboard.
+  // iPhone does not move fixed bars for the keyboard, so its height is measured from the visual viewport.
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const place = () => {
+      const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      document.documentElement.style.setProperty('--kb', `${kb}px`);
+      document.body.classList.toggle('kbup', kb > 80);
+    };
+    vv.addEventListener('resize', place); vv.addEventListener('scroll', place); place();
+  }
+
+  // On touch devices, the Visits/Summary tabs and the New visit button step aside while the keyboard is up,
+  // and a tap on empty space puts the keyboard away. They only come back once the finger is lifted,
   // so a tap on a button never lands on a bar that has just reappeared under it.
   if (matchMedia('(pointer: coarse)').matches) {
     let touching = false, t = 0, sx = 0, sy = 0;
