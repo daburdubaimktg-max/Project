@@ -1,6 +1,6 @@
 'use strict';
 /* NEE — Nishant's Eyes and Ears. UI layer. Keep APP_VERSION in step with CACHE_VERSION in sw.js. */
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 
 (function () {
   const TYPES = [['MV', 'Market visit'], ['HV', 'Home visit'], ['TR', 'Trade'], ['SL', 'Salon'],
@@ -85,6 +85,13 @@ const APP_VERSION = '1.0.1';
   const options = (list, sel, blank) => (blank != null ? `<option value="">${esc(blank)}</option>` : '') +
     list.map(x => { const [v, l] = Array.isArray(x) ? x : [x, x]; return `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(l)}</option>`; }).join('');
 
+  // Grow a text box with its content so the page scrolls as one piece (no scroll-inside-scroll).
+  function fit(el) {
+    const y = window.scrollY;
+    el.style.height = 'auto'; el.style.height = `${el.scrollHeight + 2}px`;
+    if (window.scrollY !== y) window.scrollTo(0, y);
+  }
+
   /* ---------- saving ---------- */
   function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 400); }
   async function flushSave() {
@@ -95,15 +102,22 @@ const APP_VERSION = '1.0.1';
   async function saveNow() { clearTimeout(saveTimer); saveTimer = 0; await flushSave(); }
 
   /* ---------- routing ---------- */
-  async function route() {
+  // Screens render one at a time, so quick taps can never mix two screens together.
+  let routeChain = Promise.resolve(), view = '', homeScroll = 0;
+  function route() { routeChain = routeChain.then(doRoute).catch(() => {}); return routeChain; }
+  async function doRoute() {
     await leave();
     const h = location.hash;
-    if (h.startsWith('#/v/')) return renderVisit(decodeURIComponent(h.slice(4)));
-    if (h === '#/settings') return renderSettings();
-    if (h === '#/bin') return renderBin();
-    return renderHome();
+    if (h.startsWith('#/v/')) { view = 'visit'; return renderVisit(decodeURIComponent(h.slice(4))); }
+    if (h === '#/settings') { view = 'settings'; return renderSettings(); }
+    if (h === '#/bin') { view = 'bin'; return renderBin(); }
+    view = 'home';
+    await renderHome();
+    window.scrollTo(0, homeScroll);
   }
   async function leave() {
+    if (view === 'home') homeScroll = window.scrollY;
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     await flushSave();
     if (Rec.mr) await stopRec();
     urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
@@ -111,7 +125,7 @@ const APP_VERSION = '1.0.1';
     document.querySelectorAll('.overlay,.lightbox').forEach(n => n.remove());
     window.scrollTo(0, 0);
   }
-  const go = h => { if (location.hash === h) route(); else location.hash = h; };
+  const go = h => { if (location.hash === h) { route(); } else { location.hash = h; } };
 
   /* ---------- home (Keep-style list) ---------- */
   async function renderHome() {
@@ -308,10 +322,11 @@ const APP_VERSION = '1.0.1';
       </div></div>`;
     // Set text through .value so it is stored and shown exactly as entered.
     $('#txt').value = v.text_raw; $('#notes').value = v.typed_notes;
+    fit($('#txt')); fit($('#notes'));
 
     $('#back').onclick = () => go('#/');
-    $('#txt').oninput = e => { cur.text_raw = e.target.value; scheduleSave(); };
-    $('#notes').oninput = e => { cur.typed_notes = e.target.value; scheduleSave(); };
+    $('#txt').oninput = e => { cur.text_raw = e.target.value; fit(e.target); scheduleSave(); };
+    $('#notes').oninput = e => { cur.typed_notes = e.target.value; fit(e.target); scheduleSave(); };
     root.querySelectorAll('[data-f]').forEach(el => {
       el.oninput = el.onchange = () => { cur[el.dataset.f] = el.value; drawHead(); scheduleSave(); };
     });
@@ -410,15 +425,19 @@ const APP_VERSION = '1.0.1';
   }
 
   /* ---------- media ---------- */
+  // Only adds or removes the rows that changed, so existing players and photos never flicker.
   async function drawMedia() {
     const token = ++drawToken, box = $('#media'), v = cur;
     if (!box || !v) return;
-    const items = live(v), frag = document.createDocumentFragment();
+    const items = live(v), ids = new Set(items.map(m => m.id));
+    box.querySelectorAll('.mitem').forEach(n => { if (!ids.has(n.dataset.mid)) n.remove(); });
+    const have = new Set([...box.querySelectorAll('.mitem')].map(n => n.dataset.mid));
     for (const m of items) {
+      if (have.has(m.id)) continue;
       const blob = await DB.getBlob(m.id);
       if (token !== drawToken) return;
       const url = blob ? URL.createObjectURL(blob) : ''; if (url) urls.push(url);
-      const row = document.createElement('div'); row.className = 'mitem';
+      const row = document.createElement('div'); row.className = 'mitem'; row.dataset.mid = m.id;
       const when = (m.captured_at || '').slice(11, 16);
       const player = !url ? '<p class="muted">File missing on this device.</p>'
         : m.kind === 'audio' ? `<audio controls preload="metadata" src="${url}"></audio>`
@@ -427,10 +446,11 @@ const APP_VERSION = '1.0.1';
       row.innerHTML = `<div class="mhead"><strong class="grow">${esc(m.id)}</strong>
         <span class="muted small">${m.kind} · ${esc(when)}${m.duration_s != null ? ' · ' + fmtDur(m.duration_s) : ''}${blob ? ' · ' + fmtBytes(blob.size) : ''}</span>
         <button class="btn ghost danger" data-dm="${esc(m.id)}">Delete</button></div>${player}`;
-      frag.appendChild(row);
+      box.appendChild(row);
     }
-    box.innerHTML = items.length ? '' : '<p class="muted">Nothing captured yet. Use Record, Photo or Video below.</p>';
-    box.appendChild(frag);
+    let empty = box.querySelector('.mempty');
+    if (!items.length && !empty) { empty = document.createElement('p'); empty.className = 'muted mempty'; empty.textContent = 'Nothing captured yet. Use Record, Photo or Video below.'; box.appendChild(empty); }
+    else if (items.length && empty) empty.remove();
     box.onclick = async e => {
       const z = e.target.closest('[data-zoom]'), d = e.target.closest('[data-dm]');
       if (z) {
@@ -682,6 +702,27 @@ const APP_VERSION = '1.0.1';
   });
   window.addEventListener('pagehide', () => { flushSave(); });
   window.addEventListener('hashchange', route);
+
+  // Lock the page behind any open sheet so only the sheet scrolls.
+  new MutationObserver(() => {
+    document.documentElement.classList.toggle('lock', !!document.querySelector('.overlay,.lightbox'));
+  }).observe(document.body, { childList: true });
+
+  // On touch devices, hide the bottom bars while the keyboard is up (they jump around on iPhone otherwise),
+  // and let a tap on empty space put the keyboard away.
+  if (matchMedia('(pointer: coarse)').matches) {
+    const typing = el => el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && /^(text|search|date)$/.test(el.type)));
+    const sync = () => document.body.classList.toggle('kb', typing(document.activeElement));
+    document.addEventListener('focusin', sync);
+    document.addEventListener('focusout', () => setTimeout(sync, 150));
+    let sx = 0, sy = 0;
+    document.addEventListener('touchstart', e => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+    document.addEventListener('touchend', e => {
+      const t = e.changedTouches[0], a = document.activeElement;
+      if (!typing(a) || Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) return;
+      if (!e.target.closest('input,textarea,select,button,label,a,summary,audio,video')) a.blur();
+    }, { passive: true });
+  }
 
   (async function start() {
     try {
