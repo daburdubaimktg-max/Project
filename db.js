@@ -1,6 +1,7 @@
 'use strict';
 /* NEE storage layer. Everything lives in IndexedDB on this device.
-   Stores: visits (records + media metadata), blobs (original media bytes), meta (settings, counters). */
+   Stores: visits (records + media metadata), blobs (original media, untouched), meta (settings, counters),
+   rec (audio being recorded, written as it arrives so an interruption keeps what was captured). */
 
 const U = {
   pad: (n, l = 2) => String(n).padStart(l, '0'),
@@ -16,7 +17,7 @@ const U = {
 };
 
 const DB = (() => {
-  const NAME = 'nee-db', VER = 1;
+  const NAME = 'nee-db', VER = 2;
   let dbp = null;
 
   function open() {
@@ -28,9 +29,14 @@ const DB = (() => {
           if (!d.objectStoreNames.contains('visits')) d.createObjectStore('visits', { keyPath: 'visit_id' });
           if (!d.objectStoreNames.contains('blobs')) d.createObjectStore('blobs', { keyPath: 'id' });
           if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'key' });
+          if (!d.objectStoreNames.contains('rec')) d.createObjectStore('rec', { keyPath: 'k' });
         };
-        r.onsuccess = () => res(r.result);
-        r.onerror = () => rej(r.error);
+        r.onsuccess = () => {
+          // If another tab upgrades the database, let go so it is not blocked.
+          r.result.onversionchange = () => { r.result.close(); dbp = null; };
+          res(r.result);
+        };
+        r.onerror = () => { dbp = null; rej(r.error); };
       });
     }
     return dbp;
@@ -49,11 +55,15 @@ const DB = (() => {
     });
   }
 
-  // Keep end_time moving while the visit is being worked on the same day.
-  function touch(v) {
+  // end_time follows capture: it moves only for dictation and new media, on the visit's own day,
+  // and only while the visit is still going (within 3 hours of the last capture).
+  function touch(v, capture) {
     const now = new Date();
     v.updated_at = U.iso(now);
-    if (U.ymd(now) === v.date) v.end_time = U.hm(now);
+    if (!capture || U.ymd(now) !== v.date) return;
+    const [h, m] = (v.end_time || v.start_time || '00:00').split(':').map(Number);
+    const mins = now.getHours() * 60 + now.getMinutes() - (h * 60 + m);
+    if (mins >= 0 && mins <= 180) v.end_time = U.hm(now);
   }
 
   const getVisits = () => run(['visits'], 'readonly', (t, set) => {
@@ -64,9 +74,31 @@ const DB = (() => {
     const r = t.objectStore('visits').get(id); r.onsuccess = () => set(r.result || null);
   });
 
+  // Whole-record write. Used for import and seeding only; the app edits through patchVisit.
   function putVisit(v, bump = true) {
-    if (bump) touch(v);
+    if (bump) touch(v, true);
     return run(['visits'], 'readwrite', t => { t.objectStore('visits').put(v); });
+  }
+
+  // Change only the named fields, inside one transaction, on top of whatever is stored now.
+  // The media list and counters are never taken from the caller, so a stale screen cannot erase captured media.
+  // patch.media_deleted = { mediaId: isoStamp | null } marks or restores single media items.
+  function patchVisit(id, patch, bump = true) {
+    return run(['visits'], 'readwrite', (t, set) => {
+      const vs = t.objectStore('visits'), r = vs.get(id);
+      r.onsuccess = () => {
+        const v = r.result;
+        if (!v) { set(null); return; }
+        for (const k of Object.keys(patch)) {
+          if (k === 'media_deleted') {
+            for (const m of v.media) if (m.id in patch.media_deleted) m.deleted_at = patch.media_deleted[m.id];
+          } else if (k !== 'media' && k !== 'media_seq' && k !== 'visit_id') v[k] = patch[k];
+        }
+        if (bump) touch(v, 'text_raw' in patch);
+        vs.put(v);
+        set(v);
+      };
+    });
   }
 
   // New visit. NN is numbered per day per country across all types and is never reused.
@@ -105,11 +137,11 @@ const DB = (() => {
     });
   }
 
-  // Stores the original bytes untouched and returns the updated visit record.
+  // Stores the original file untouched (as a Blob, so large videos are not copied into memory)
+  // and returns the updated visit record. Falls back to raw bytes if this browser cannot store Blobs.
   async function addMedia(visitId, kind, blob, ext, durationS) {
-    const data = await blob.arrayBuffer();
     const mime = (blob.type || '').split(';')[0] || 'application/octet-stream';
-    return run(['visits', 'blobs'], 'readwrite', (t, set) => {
+    const write = payload => run(['visits', 'blobs'], 'readwrite', (t, set) => {
       const vs = t.objectStore('visits');
       const r = vs.get(visitId);
       r.onsuccess = () => {
@@ -123,21 +155,25 @@ const DB = (() => {
           id, kind, filename: `${id}.${ext}`, mime,
           captured_at: U.iso(), duration_s: durationS == null ? null : durationS, deleted_at: null,
         });
-        touch(v);
+        touch(v, true);
         vs.put(v);
-        t.objectStore('blobs').put({ id, data, mime });
+        t.objectStore('blobs').put({ id, mime, ...payload });
         set(v);
       };
     });
+    try { return await write({ blob }); }
+    catch (e) {
+      if (e && (e.name === 'DataCloneError' || e.name === 'UnknownError')) return write({ data: await blob.arrayBuffer() });
+      throw e;
+    }
   }
 
   const getBlob = id => run(['blobs'], 'readonly', (t, set) => {
     const r = t.objectStore('blobs').get(id);
-    r.onsuccess = () => set(r.result ? new Blob([r.result.data], { type: r.result.mime }) : null);
-  });
-
-  const getBytes = id => run(['blobs'], 'readonly', (t, set) => {
-    const r = t.objectStore('blobs').get(id); r.onsuccess = () => set(r.result ? r.result.data : null);
+    r.onsuccess = () => {
+      const x = r.result;
+      set(!x ? null : x.blob ? (x.blob.type ? x.blob : x.blob.slice(0, x.blob.size, x.mime)) : new Blob([x.data], { type: x.mime }));
+    };
   });
 
   function deleteVisitForever(id) {
@@ -164,6 +200,7 @@ const DB = (() => {
   }
 
   // Import never overwrites: returns false when the visit_id is already on this device.
+  // Only media whose ids belong to this visit are written, so no other visit's file can be replaced.
   function importVisit(v, blobs) {
     const m = U.ID_RE.exec(v.visit_id);
     return run(['visits', 'blobs', 'meta'], 'readwrite', (t, set) => {
@@ -172,7 +209,7 @@ const DB = (() => {
       r.onsuccess = () => {
         if (r.result) { set(false); return; }
         vs.add(v);
-        for (const b of blobs) t.objectStore('blobs').put(b);
+        for (const b of blobs) if (b.id.startsWith(`${v.visit_id}-`)) t.objectStore('blobs').put(b);
         if (m) {
           const ms = t.objectStore('meta'), key = `seq:${m[1]}:${m[2]}`, r2 = ms.get(key);
           r2.onsuccess = () => {
@@ -201,6 +238,25 @@ const DB = (() => {
   });
   const setMeta = (key, value) => run(['meta'], 'readwrite', t => { t.objectStore('meta').put({ key, value }); });
 
+  /* Recording in progress: each chunk is written as it arrives. */
+  const recPut = (recId, n, visitId, mime, t0, data) => run(['rec'], 'readwrite', t => {
+    t.objectStore('rec').put({ k: `${recId}:${String(n).padStart(6, '0')}`, recId, visitId, mime, t0, at: Date.now(), data });
+  });
+  const recClear = recId => run(['rec'], 'readwrite', t => {
+    const s = t.objectStore('rec'), r = s.openCursor();
+    r.onsuccess = () => { const c = r.result; if (!c) return; if (c.value.recId === recId) c.delete(); c.continue(); };
+  });
+  // Recordings that were interrupted before Stop (app closed, phone died): returned in order, grouped.
+  const recPending = () => run(['rec'], 'readonly', (t, set) => {
+    const r = t.objectStore('rec').getAll();
+    r.onsuccess = () => {
+      const by = {};
+      for (const x of r.result) (by[x.recId] = by[x.recId] || []).push(x);
+      set(Object.values(by).map(a => ({ recId: a[0].recId, visitId: a[0].visitId, mime: a[0].mime, t0: a[0].t0,
+        last: a[a.length - 1].at, parts: a.map(x => x.data) })));
+    };
+  });
+
   // Empty the bin of anything deleted more than 30 days ago.
   async function purgeExpired() {
     const cutoff = Date.now() - U.BIN_DAYS * 86400000;
@@ -211,6 +267,6 @@ const DB = (() => {
     }
   }
 
-  return { getVisits, getVisit, putVisit, createVisit, addMedia, getBlob, getBytes, deleteVisitForever,
-    deleteMediaForever, importVisit, markExported, getMeta, setMeta, purgeExpired };
+  return { getVisits, getVisit, putVisit, patchVisit, createVisit, addMedia, getBlob, deleteVisitForever,
+    deleteMediaForever, importVisit, markExported, getMeta, setMeta, recPut, recClear, recPending, purgeExpired };
 })();
