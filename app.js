@@ -1,6 +1,6 @@
 'use strict';
 /* NEE — Nishant's Eyes and Ears. UI layer. Keep APP_VERSION in step with CACHE_VERSION in sw.js. */
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 (function () {
   const TYPES = [['MV', 'Market visit'], ['HV', 'Home visit'], ['TR', 'Trade'], ['SL', 'Salon'],
@@ -207,7 +207,7 @@ const APP_VERSION = '1.2.0';
     if (filters.label && !v.labels.includes(filters.label)) return false;
     const q = filters.q.trim().toLowerCase();
     if (!q) return true;
-    const hay = [v.visit_id, typeName(v.visit_type, v), v.text_raw, v.typed_notes, v.city, v.suburb, v.outlet_type, v.who_role,
+    const hay = [v.visit_id, typeName(v.visit_type, v), v.summary || '', v.text_raw, v.typed_notes, v.city, v.suburb, v.outlet_type, v.who_role,
       v.labels.join(' '), v.checklist.map(c => c.text).join(' ')].join('\n').toLowerCase();
     return q.split(/\s+/).every(w => hay.includes(w));
   }
@@ -217,7 +217,7 @@ const APP_VERSION = '1.2.0';
     const counts = [[n('audio'), ICON.mic, 'audio'], [n('photo'), ICON.camera, 'photo'], [n('video'), ICON.video, 'video']]
       .filter(c => c[0]).map(c => `<span class="chip" aria-label="${c[0]} ${c[2]}">${c[1]}${c[0]}</span>`).join('');
     const place = placeOf(v);
-    const snip = (v.text_raw || v.typed_notes).trim().slice(0, 200);
+    const snip = (v.summary || v.text_raw || v.typed_notes).trim().slice(0, 200);
     const todo = v.checklist.filter(c => !c.done).length;
     const exported = v.exported_at && Date.parse(v.exported_at) >= Date.parse(v.updated_at);
     return `<div class="card ${v.colour ? 'col-' + esc(v.colour) : ''}">
@@ -416,6 +416,7 @@ const APP_VERSION = '1.2.0';
     L.push('', 'Visits:');
     for (const v of vs.slice().sort((a, b) => a.visit_id.localeCompare(b.visit_id))) {
       L.push(`- ${v.visit_id} · ${typeName(v.visit_type, v)}${placeOf(v) ? ' · ' + placeOf(v) : ''}${v.outlet_type ? ' · ' + v.outlet_type : ''} · ${v.date} ${v.start_time}`);
+      if ((v.summary || '').trim()) L.push(`  Summary: ${v.summary.trim().replace(/\n+/g, ' / ')}`);
     }
     return L.join('\n') + '\n';
   }
@@ -446,6 +447,8 @@ const APP_VERSION = '1.2.0';
       ${s.byLabel.length ? `<h3>Labels</h3><div class="chips">${s.byLabel.map(l => `<span class="chip">${esc(l[0])} · ${l[1]}</span>`).join('')}</div>` : ''}
       <h3>Open to-dos <span class="count">${s.todos.length}</span></h3>
       ${s.todos.length ? `<div class="box todos">${s.todos.slice(0, 30).map(t => `<a href="#/v/${encodeURIComponent(t.v.visit_id)}"><span>${esc(t.text)}</span><small>${esc(typeName(t.v.visit_type, t.v))}${placeOf(t.v) ? ' · ' + esc(placeOf(t.v)) : ''}</small></a>`).join('')}</div>` : '<p class="muted">Nothing open.</p>'}
+      ${vs.some(v => (v.summary || '').trim()) ? `<h3>Visit summaries</h3><div class="box todos">${vs.filter(v => (v.summary || '').trim()).sort((a, b) => b.visit_id.localeCompare(a.visit_id)).map(v =>
+        `<a href="#/v/${encodeURIComponent(v.visit_id)}"><small>${esc(typeName(v.visit_type, v))}${placeOf(v) ? ' · ' + esc(placeOf(v)) : ''} · ${esc(dayLabel(v.date))}</small><span class="pre">${esc(v.summary.trim())}</span></a>`).join('')}</div>` : ''}
       <div class="actions">
         <button class="btn primary block" id="sumClaude">${ICON.share}Send summary to Claude Project</button>
         <div id="sumNext"></div>
@@ -485,6 +488,8 @@ const APP_VERSION = '1.2.0';
       <div id="rec"></div>
       <h3>Photos, videos and audio</h3>
       <div id="media"><div class="mgrid" id="mgrid"></div><div id="maudio"></div></div>
+      <h3>Visit summary</h3>
+      <textarea id="vsum" aria-label="Visit summary" placeholder="Key takeaways from this visit, in your own words…" autocorrect="off" spellcheck="false" autocapitalize="sentences"></textarea>
       <h3>Typed notes</h3>
       <textarea id="notes" aria-label="Typed notes" placeholder="Prices, names of products, follow-ups…" autocorrect="off" spellcheck="false" autocapitalize="sentences"></textarea>
       <h3>Checklist</h3><div id="check"></div>
@@ -499,12 +504,13 @@ const APP_VERSION = '1.2.0';
         <label class="btn" id="videoBtn" role="button" tabindex="0">${ICON.video}Video<input type="file" id="videoIn" accept="video/*" capture="environment"></label>
       </div></div>`;
     // Set text through .value so it is stored and shown exactly as entered.
-    $('#txt').value = v.text_raw; $('#notes').value = v.typed_notes;
-    fit($('#txt')); fit($('#notes'));
+    $('#txt').value = v.text_raw; $('#notes').value = v.typed_notes; $('#vsum').value = v.summary || '';
+    fit($('#txt')); fit($('#notes')); fit($('#vsum'));
 
     $('#back').onclick = () => go('#/');
     $('#txt').oninput = e => { cur.text_raw = e.target.value; fit(e.target); scheduleSave(); };
     $('#notes').oninput = e => { cur.typed_notes = e.target.value; fit(e.target); scheduleSave(); };
+    $('#vsum').oninput = e => { cur.summary = e.target.value; fit(e.target); scheduleSave(); };
     $('#pin').onclick = () => { cur.pinned = !cur.pinned; drawHead(); scheduleSave(); };
     $('#more').onclick = moreSheet;
     $('#editDetails').onclick = detailsSheet;

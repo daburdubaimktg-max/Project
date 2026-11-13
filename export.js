@@ -10,7 +10,7 @@ const Exporter = (() => {
       visit_type: v.visit_type, outlet_type: v.outlet_type, who_role: v.who_role,
       consent_stated: v.consent_stated, date_edit_reason: v.date_edit_reason,
       labels: v.labels, pinned: !!v.pinned, colour: v.colour,
-      text_raw: v.text_raw, typed_notes: v.typed_notes,
+      summary: v.summary || '', text_raw: v.text_raw, typed_notes: v.typed_notes,
       checklist: v.checklist.map(c => ({ text: c.text, done: !!c.done })),
       media: v.media.filter(m => !m.deleted_at).map(m => ({
         id: m.id, kind: m.kind, filename: m.filename, mime: m.mime,
@@ -31,6 +31,7 @@ const Exporter = (() => {
     ];
     if (j.date_edit_reason) lines.push(`Date edit reason: ${j.date_edit_reason}`);
     if (j.labels.length) lines.push(`Labels: ${j.labels.join(', ')}`);
+    if (j.summary) lines.push('', '## Summary', j.summary);
     lines.push('', '## Raw text (verbatim)', j.text_raw, '', '## Notes', j.typed_notes, '', '## Checklist');
     for (const c of j.checklist) lines.push(`- [${c.done ? 'x' : ' '}] ${c.text}`);
     lines.push('', '## Media');
@@ -105,7 +106,7 @@ const Exporter = (() => {
         consent_stated: j.consent_stated === 'yes' ? 'yes' : 'no', date_edit_reason: str(j.date_edit_reason),
         labels: Array.isArray(j.labels) ? j.labels.filter(l => typeof l === 'string') : [],
         pinned: !!j.pinned, colour: str(j.colour),
-        text_raw: str(j.text_raw), typed_notes: str(j.typed_notes),
+        summary: str(j.summary), text_raw: str(j.text_raw), typed_notes: str(j.typed_notes),
         checklist: (Array.isArray(j.checklist) ? j.checklist : []).map(c => ({ text: str(c && c.text), done: !!(c && c.done) })),
         media, created_at: now, updated_at: now, exported_at: now, imported_at: now, deleted_at: null, media_seq: seq,
       };

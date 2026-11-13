@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0 — 2026-11-13
+
+- Written summary inside each visit ("Visit summary"). It shows on the visit card, is searchable, appears on the Summary tab, and is exported as `summary` in visit.json and a `## Summary` section in visit.md (only when filled in).
+
 ## 1.2.0 — 2026-11-13
 
 - Custom visit categories: add your own (name + 2-letter code) from New visit or Settings; the seven built-in ones stay.

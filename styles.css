@@ -277,3 +277,7 @@ h3 .count { display: inline-block; min-width: 22px; padding: 1px 7px; margin-lef
 .next strong { display: flex; align-items: center; gap: 6px; color: var(--accent); }
 .next .btn { margin-top: 8px; text-decoration: none; }
 a.btn { text-decoration: none; }
+
+#vsum { min-height: 96px; }
+.pre { white-space: pre-wrap; }
+.todos a small + span { margin-top: 2px; font-weight: 500; }

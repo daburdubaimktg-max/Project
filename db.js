@@ -92,7 +92,7 @@ const DB = (() => {
             visit_type: f.visit_type, visit_type_name: f.visit_type_name || '', outlet_type: f.outlet_type || '',
             who_role: f.who_role || '', consent_stated: f.consent_stated === 'yes' ? 'yes' : 'no',
             date_edit_reason: '', labels: [], pinned: false, colour: '',
-            text_raw: '', typed_notes: '', checklist: [], media: [],
+            summary: '', text_raw: '', typed_notes: '', checklist: [], media: [],
             created_at: U.iso(now), updated_at: U.iso(now),
             exported_at: null, imported_at: null, deleted_at: null,
             media_seq: { A: 0, P: 0, V: 0 },
