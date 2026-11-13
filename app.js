@@ -1,6 +1,6 @@
 'use strict';
 /* NEE — Nishant's Eyes and Ears. UI layer. Keep APP_VERSION in step with CACHE_VERSION in sw.js. */
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.1.0';
 
 (function () {
   const TYPES = [['MV', 'Market visit'], ['HV', 'Home visit'], ['TR', 'Trade'], ['SL', 'Salon'],
@@ -24,6 +24,13 @@ const APP_VERSION = '1.0.2';
     stop: svg('<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>'),
     camera: svg('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
     video: svg('<rect x="3" y="6" width="12" height="12" rx="2"/><path d="M15 10l6-3v10l-6-3z"/>'),
+    back: svg('<path d="M15 5l-7 7 7 7"/>'),
+    more: svg('<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>'),
+    edit: svg('<path d="M4 20l4-1L19 8l-3-3L5 16z"/>'),
+    share: svg('<path d="M12 15V4M8 8l4-4 4 4M5 13v6h14v-6"/>'),
+    trash: svg('<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/>'),
+    calendar: svg('<rect x="4" y="6" width="16" height="14" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>'),
+    check: svg('<path d="M5 12l5 5 9-10"/>'),
     book: svg('<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11M9 8h6"/>'),
   };
   const REC_IDLE = `${ICON.mic}<span>Record</span>`, REC_ON = `${ICON.stop}<span>Stop</span>`;
@@ -93,11 +100,12 @@ const APP_VERSION = '1.0.2';
   }
 
   /* ---------- saving ---------- */
-  function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 400); }
+  const saveState = t => { const el = $('#saveState'); if (el) el.textContent = t; };
+  function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 400); saveState('Saving…'); }
   async function flushSave() {
     if (saveTimer == null || !cur) { clearTimeout(saveTimer); saveTimer = null; return; }
     clearTimeout(saveTimer); saveTimer = null;
-    try { await DB.putVisit(cur); } catch (e) { toast('Could not save — storage error. Export now.', 8000); }
+    try { await DB.putVisit(cur); saveState('Saved'); } catch (e) { saveState('Not saved'); toast('Could not save — storage error. Export now.', 8000); }
   }
   async function saveNow() { clearTimeout(saveTimer); saveTimer = 0; await flushSave(); }
 
@@ -120,7 +128,7 @@ const APP_VERSION = '1.0.2';
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     await flushSave();
     if (Rec.mr) await stopRec();
-    urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
+    urls.forEach(u => URL.revokeObjectURL(u)); urls = []; mediaUrl.clear();
     cur = null; drawToken++; root.onclick = null;
     document.querySelectorAll('.overlay,.lightbox').forEach(n => n.remove());
     window.scrollTo(0, 0);
@@ -128,30 +136,51 @@ const APP_VERSION = '1.0.2';
   const go = h => { if (location.hash === h) { route(); } else { location.hash = h; } };
 
   /* ---------- home (Keep-style list) ---------- */
+  const placeOf = v => [v.suburb, v.city].filter(Boolean).join(', ');
+  function dayLabel(ymd) {
+    const t = new Date(), y = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1);
+    return ymd === U.ymd(t) ? 'Today' : ymd === U.ymd(y) ? 'Yesterday' : fmtDate(ymd);
+  }
+
   async function renderHome() {
     const all = (await DB.getVisits()).filter(v => !v.deleted_at);
     const labels = [...new Set(all.flatMap(v => v.labels))].sort();
-    const ctry = [...new Set([...countries, ...all.map(v => v.country)])];
+    const ctry = [...new Set(all.map(v => v.country))].sort();
+    const types = TYPES.filter(t => all.some(v => v.visit_type === t[0]));
+    if (filters.type && !types.some(t => t[0] === filters.type)) filters.type = '';
+    if (filters.country && !ctry.includes(filters.country)) filters.country = '';
+    if (filters.label && !labels.includes(filters.label)) filters.label = '';
+    const today = all.filter(v => v.date === U.ymd()).length;
     root.innerHTML = `
       <header class="bar home"><div class="grow"><h1>Eyes &amp; Ears</h1>
-        <div class="today">${esc(fmtDate(U.ymd()))} · ${all.length} visit${all.length === 1 ? '' : 's'}</div></div>
+        <div class="today">${esc(fmtDate(U.ymd()))} · ${today ? `${today} visit${today === 1 ? '' : 's'} today` : 'no visits yet today'}</div></div>
         <button class="btn icon" id="toSettings" aria-label="Settings">${ICON.settings}</button></header>
       <div id="banners"></div>
-      <input id="q" type="search" placeholder="Search text, notes, places, labels" aria-label="Search visits"
+      ${all.length ? `<input id="q" type="search" placeholder="Search visits" aria-label="Search visits"
         autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(filters.q)}">
-      <div class="filters">
-        <select id="fType" aria-label="Filter by type">${options(TYPES.map(t => [t[0], `${t[0]} ${t[1]}`]), filters.type, 'All types')}</select>
-        <select id="fCountry" aria-label="Filter by country">${options(ctry, filters.country, 'All countries')}</select>
-        <select id="fLabel" aria-label="Filter by label">${options(labels, filters.label, 'All labels')}</select>
-      </div>
+      <div class="tchips" id="tchips" role="group" aria-label="Filter by type"></div>
+      ${ctry.length > 1 || labels.length ? `<div class="filters">
+        ${ctry.length > 1 ? `<select id="fCountry" aria-label="Filter by country">${options(ctry, filters.country, 'All countries')}</select>` : ''}
+        ${labels.length ? `<select id="fLabel" aria-label="Filter by label">${options(labels, filters.label, 'All labels')}</select>` : ''}
+      </div>` : ''}` : ''}
       <div id="list"></div>
       <button class="fab" id="fab">${ICON.plus}New visit</button>`;
     $('#toSettings').onclick = () => go('#/settings');
     $('#fab').onclick = () => newVisitSheet(all);
-    $('#q').oninput = e => { filters.q = e.target.value; drawList(all); };
-    $('#fType').onchange = e => { filters.type = e.target.value; drawList(all); };
-    $('#fCountry').onchange = e => { filters.country = e.target.value; drawList(all); };
-    $('#fLabel').onchange = e => { filters.label = e.target.value; drawList(all); };
+    const drawTypes = () => {
+      const box = $('#tchips'); if (!box) return;
+      box.innerHTML = types.length < 2 ? '' : [['', 'All'], ...types].map(t =>
+        `<button class="tchip ${filters.type === t[0] ? 'on' : ''}" data-ft="${t[0]}" aria-pressed="${filters.type === t[0]}">${esc(t[1])}</button>`).join('');
+    };
+    if ($('#q')) {
+      $('#q').oninput = e => { filters.q = e.target.value; drawList(all); };
+      $('#tchips').onclick = e => {
+        const b = e.target.closest('[data-ft]'); if (!b) return;
+        filters.type = b.dataset.ft; drawTypes(); drawList(all);
+      };
+      if ($('#fCountry')) $('#fCountry').onchange = e => { filters.country = e.target.value; drawList(all); };
+      if ($('#fLabel')) $('#fLabel').onchange = e => { filters.label = e.target.value; drawList(all); };
+    }
     $('#list').onclick = async e => {
       const pin = e.target.closest('[data-pin]'), day = e.target.closest('[data-day]');
       if (pin) {
@@ -159,8 +188,7 @@ const APP_VERSION = '1.0.2';
         v.pinned = !v.pinned; await DB.putVisit(v, false); drawList(all);
       } else if (day) exportFlow('day', day.dataset.day);
     };
-    drawList(all);
-    drawBanners(all);
+    drawTypes(); drawList(all); drawBanners(all);
   }
 
   function matches(v) {
@@ -169,29 +197,25 @@ const APP_VERSION = '1.0.2';
     if (filters.label && !v.labels.includes(filters.label)) return false;
     const q = filters.q.trim().toLowerCase();
     if (!q) return true;
-    const hay = [v.visit_id, v.text_raw, v.typed_notes, v.city, v.suburb, v.outlet_type, v.who_role,
+    const hay = [v.visit_id, TYPE_NAME[v.visit_type], v.text_raw, v.typed_notes, v.city, v.suburb, v.outlet_type, v.who_role,
       v.labels.join(' '), v.checklist.map(c => c.text).join(' ')].join('\n').toLowerCase();
     return q.split(/\s+/).every(w => hay.includes(w));
   }
 
   function card(v) {
     const m = live(v), n = k => m.filter(x => x.kind === k).length;
-    const counts = [[n('audio'), 'audio'], [n('photo'), 'photo'], [n('video'), 'video']]
-      .filter(c => c[0]).map(c => `${c[0]} ${c[1]}${c[0] > 1 && c[1] !== 'audio' ? 's' : ''}`).join(' · ');
-    const place = [v.city, v.suburb, v.outlet_type].filter(Boolean).join(' · ');
-    const snip = (v.text_raw || v.typed_notes).slice(0, 200);
+    const counts = [[n('audio'), ICON.mic, 'audio'], [n('photo'), ICON.camera, 'photo'], [n('video'), ICON.video, 'video']]
+      .filter(c => c[0]).map(c => `<span class="chip" aria-label="${c[0]} ${c[2]}">${c[1]}${c[0]}</span>`).join('');
+    const place = placeOf(v);
+    const snip = (v.text_raw || v.typed_notes).trim().slice(0, 200);
+    const todo = v.checklist.filter(c => !c.done).length;
     const exported = v.exported_at && Date.parse(v.exported_at) >= Date.parse(v.updated_at);
     return `<div class="card ${v.colour ? 'col-' + esc(v.colour) : ''}">
       <a href="#/v/${encodeURIComponent(v.visit_id)}">
-        <div class="cid"><span class="tbadge">${esc(v.visit_type)}</span>${esc(v.visit_id)}</div>
-        <div class="sub">${esc(TYPE_NAME[v.visit_type] || v.visit_type)}${place ? ' · ' + esc(place) : ''} · ${esc(v.start_time)}</div>
-        ${snip ? `<div class="snip">${esc(snip)}</div>` : ''}
-        <div class="chips">
-          ${needsWarning(v) ? '<span class="chip warn">⚠ Recording, consent = no</span>' : ''}
-          ${counts ? `<span class="chip">${counts}</span>` : ''}
-          ${v.labels.map(l => `<span class="chip">${esc(l)}</span>`).join('')}
-          ${exported ? '<span class="chip ok">Exported</span>' : ''}
-        </div>
+        <div class="ctitle"><span class="tbadge">${esc(v.visit_type)}</span><span class="ctext">${esc(TYPE_NAME[v.visit_type] || v.visit_type)}${place ? ` · ${esc(place)}` : ''}</span></div>
+        <div class="cid">${esc(v.visit_id)} · ${esc(v.start_time)}${v.outlet_type ? ` · ${esc(v.outlet_type)}` : ''}</div>
+        ${snip ? `<div class="snip">${esc(snip)}</div>` : '<div class="snip muted">Nothing captured yet</div>'}
+        <div class="chips">${needsWarning(v) ? '<span class="chip warn">⚠ Recorded without consent</span>' : ''}${counts}${todo ? `<span class="chip">${ICON.check}${todo} to do</span>` : ''}${v.labels.map(l => `<span class="chip">${esc(l)}</span>`).join('')}${exported ? '<span class="chip ok">Exported</span>' : ''}</div>
       </a>
       <button class="pinbtn ${v.pinned ? 'on' : ''}" data-pin="${esc(v.visit_id)}" aria-pressed="${v.pinned}" aria-label="Pin ${esc(v.visit_id)}">${ICON.pin}</button>
     </div>`;
@@ -200,8 +224,12 @@ const APP_VERSION = '1.0.2';
   function drawList(all) {
     const vs = all.filter(matches).sort((a, b) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at) || b.visit_id.localeCompare(a.visit_id));
     const box = $('#list');
-    if (!all.length) { box.innerHTML = `<div class="empty">${ICON.book}<strong>No visits yet</strong>Tap “New visit” to start capturing.</div>`; return; }
-    if (!vs.length) { box.innerHTML = '<p class="muted pad">Nothing matches the search or filters.</p>'; return; }
+    if (!all.length) {
+      box.innerHTML = `<div class="empty">${ICON.book}<strong>Ready for your first visit</strong>
+        <ol><li>Tap <b>New visit</b> and pick the type.</li><li>Dictate, record, and take photos or videos.</li><li>In the evening, tap <b>Export day</b> and share it.</li></ol></div>`;
+      return;
+    }
+    if (!vs.length) { box.innerHTML = '<div class="empty"><strong>No matches</strong>Try a different search or filter.</div>'; return; }
     let html = '';
     const pinned = vs.filter(v => v.pinned);
     if (pinned.length) html += `<div class="ghead"><h3>Pinned</h3></div>${pinned.map(card).join('')}`;
@@ -209,7 +237,8 @@ const APP_VERSION = '1.0.2';
     for (const v of vs.filter(v => !v.pinned)) {
       if (v.date !== last) {
         last = v.date;
-        html += `<div class="ghead"><h3>${esc(fmtDate(v.date))}</h3><button class="btn" data-day="${esc(v.date)}">Export day</button></div>`;
+        const n = all.filter(x => x.date === v.date).length;
+        html += `<div class="ghead"><h3>${esc(dayLabel(v.date))} <span class="count">${n}</span></h3><button class="btn" data-day="${esc(v.date)}">${ICON.share}Export day</button></div>`;
       }
       html += card(v);
     }
@@ -236,26 +265,33 @@ const APP_VERSION = '1.0.2';
   /* ---------- new visit ---------- */
   function newVisitSheet(all) {
     const uniq = k => [...new Set(all.map(v => v[k]).filter(Boolean))];
-    let type = '', consent = 'no';
+    const noAttr = 'autocomplete="off" autocorrect="off" spellcheck="false"';
+    let type = '', consent = 'no', outletTouched = false;
     const o = overlay(`
       <h2>New visit</h2>
-      <div class="types" id="nvTypes">${TYPES.map(t => `<button class="btn" data-t="${t[0]}"><strong>${t[0]}</strong> ${esc(t[1])}</button>`).join('')}</div>
-      <label class="f">Country<select id="nvCountry">${options(countries, 'ZAF')}</select></label>
-      <label class="f">City<input type="text" id="nvCity" list="dlCity" autocomplete="off" autocorrect="off" spellcheck="false"></label>
+      <div class="types" id="nvTypes">${TYPES.map(t => `<button class="btn" data-t="${t[0]}"><strong>${t[0]}</strong>${esc(t[1])}</button>`).join('')}</div>
+      <div class="grid2">
+        <label class="f">Country<select id="nvCountry">${options(countries, 'ZAF')}</select></label>
+        <label class="f">City<input type="text" id="nvCity" list="dlCity" ${noAttr}></label>
+      </div>
       <datalist id="dlCity">${uniq('city').map(c => `<option value="${esc(c)}">`).join('')}</datalist>
-      <label class="f">Suburb<input type="text" id="nvSuburb" list="dlSuburb" autocomplete="off" autocorrect="off" spellcheck="false"></label>
+      <div class="grid2">
+        <label class="f">Suburb<input type="text" id="nvSuburb" list="dlSuburb" ${noAttr}></label>
+        <label class="f">Outlet type<select id="nvOutlet">${options(OUTLETS, '', '—')}</select></label>
+      </div>
       <datalist id="dlSuburb">${uniq('suburb').map(c => `<option value="${esc(c)}">`).join('')}</datalist>
-      <label class="f">Outlet type<select id="nvOutlet">${options(OUTLETS, '', '—')}</select></label>
-      <label class="f">Who (role or first name only)<input type="text" id="nvWho" autocomplete="off" autocorrect="off" spellcheck="false"></label>
-      <div class="f" style="margin-top:12px;font-weight:600;font-size:15px">Consent stated</div>
-      <div class="seg" id="nvConsent"><button class="btn" data-c="yes">Yes</button><button class="btn on" data-c="no">No</button></div>
-      <div class="row end"><button class="btn" id="nvCancel">Cancel</button><button class="btn primary" id="nvCreate" disabled>Choose a type</button></div>`);
-    const create = $('#nvCreate', o);
+      <label class="f">Who — role or first name only<input type="text" id="nvWho" ${noAttr}></label>
+      <div class="flabel">Did they say yes to being recorded?</div>
+      <div class="seg" id="nvConsent"><button class="btn" data-c="yes">Yes, consent stated</button><button class="btn on" data-c="no">No</button></div>
+      <div class="row end"><button class="btn" id="nvCancel">Cancel</button><button class="btn primary grow" id="nvCreate" disabled>Choose a type</button></div>`);
+    const create = $('#nvCreate', o), outlet = $('#nvOutlet', o);
+    outlet.onchange = () => { outletTouched = true; };
     $('#nvTypes', o).onclick = e => {
       const b = e.target.closest('[data-t]'); if (!b) return;
       type = b.dataset.t;
       o.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('on', x === b));
-      create.disabled = false; create.textContent = `Create ${type} visit`;
+      if (!outletTouched) outlet.value = type === 'HV' ? 'home' : type === 'SL' ? 'salon' : '';
+      create.disabled = false; create.textContent = `Start ${TYPE_NAME[type].toLowerCase()}`;
     };
     $('#nvConsent', o).onclick = e => {
       const b = e.target.closest('[data-c]'); if (!b) return;
@@ -267,7 +303,7 @@ const APP_VERSION = '1.0.2';
       create.disabled = true;
       try {
         const v = await DB.createVisit({ visit_type: type, country: $('#nvCountry', o).value, city: $('#nvCity', o).value,
-          suburb: $('#nvSuburb', o).value, outlet_type: $('#nvOutlet', o).value, who_role: $('#nvWho', o).value,
+          suburb: $('#nvSuburb', o).value, outlet_type: outlet.value, who_role: $('#nvWho', o).value,
           consent_stated: consent }, APP_VERSION);
         o.remove(); go(`#/v/${encodeURIComponent(v.visit_id)}`);
       } catch (e) { create.disabled = false; toast('Could not create the visit — storage error.'); }
@@ -277,44 +313,35 @@ const APP_VERSION = '1.0.2';
   /* ---------- visit editor ---------- */
   async function renderVisit(id) {
     const v = await DB.getVisit(id);
-    if (!v) return go('#/');
-    if (v.deleted_at) return go('#/bin');
+    if (!v) return void go('#/');
+    if (v.deleted_at) return void go('#/bin');
     cur = v;
     const all = await DB.getVisits();
     const allLabels = [...new Set(all.flatMap(x => x.labels))].sort();
     const noAttr = 'autocomplete="off" autocorrect="off" spellcheck="false"';
     root.innerHTML = `
-      <header class="bar"><button class="btn ghost" id="back">‹ Visits</button><span class="grow"></span>
-        <button class="btn" id="pin" aria-pressed="${v.pinned}"></button></header>
-      <div class="vid">${esc(v.visit_id)}</div>
+      <header class="bar"><button class="btn icon" id="back" aria-label="Back to visits">${ICON.back}</button>
+        <span class="grow savestate" id="saveState" role="status"></span>
+        <button class="btn icon" id="pin" aria-label="Pin">${ICON.pin}</button>
+        <button class="btn icon" id="more" aria-label="More actions">${ICON.more}</button></header>
+      <div class="vhead">
+        <div class="vtitle"><span class="tbadge">${esc(v.visit_type)}</span><h1>${esc(TYPE_NAME[v.visit_type] || v.visit_type)}</h1></div>
+        <button class="vsub" id="editDetails"><span id="sum"></span>${ICON.edit}</button>
+        <div class="chips"><button class="chip vid" id="copyId" aria-label="Copy visit ID">${esc(v.visit_id)}</button><span class="chip" id="when"></span><span class="chip" id="cchip"></span></div>
+      </div>
       <div id="warn"></div>
-      <details class="meta"><summary id="sum"></summary><div class="in">
-        <label class="f">City<input type="text" data-f="city" value="${esc(v.city)}" ${noAttr}></label>
-        <label class="f">Suburb<input type="text" data-f="suburb" value="${esc(v.suburb)}" ${noAttr}></label>
-        <label class="f">Outlet type<select data-f="outlet_type">${options(OUTLETS.includes(v.outlet_type) || !v.outlet_type ? OUTLETS : [v.outlet_type, ...OUTLETS], v.outlet_type, '—')}</select></label>
-        <label class="f">Who (role or first name only)<input type="text" data-f="who_role" value="${esc(v.who_role)}" ${noAttr}></label>
-        <div style="margin-top:12px;font-weight:600;font-size:15px">Consent stated</div>
-        <div class="seg" id="consent"><button class="btn" data-c="yes">Yes</button><button class="btn" data-c="no">No</button></div>
-        <p class="small muted" id="dateLine"></p>
-        <button class="btn" id="editDate">Change date</button>
-      </div></details>
-      <label class="f" for="txt">Dictation / raw text</label>
-      <textarea id="txt" placeholder="Tap here, then dictate with Wispr Flow or the microphone key" autocorrect="off" spellcheck="false" autocapitalize="sentences"></textarea>
+      <textarea id="txt" aria-label="Dictation or raw text" placeholder="Tap here and dictate what you see and hear…" autocorrect="off" spellcheck="false" autocapitalize="sentences"></textarea>
       <div id="rec"></div>
-      <h3>Media</h3><div id="media"></div>
-      <label class="f" for="notes">Typed notes</label>
-      <textarea id="notes" autocorrect="off" spellcheck="false" autocapitalize="sentences"></textarea>
+      <h3>Photos, videos and audio</h3>
+      <div id="media"><div class="mgrid" id="mgrid"></div><div id="maudio"></div></div>
+      <h3>Typed notes</h3>
+      <textarea id="notes" aria-label="Typed notes" placeholder="Prices, names of products, follow-ups…" autocorrect="off" spellcheck="false" autocapitalize="sentences"></textarea>
       <h3>Checklist</h3><div id="check"></div>
-      <div class="addrow"><input type="text" id="checkNew" placeholder="Add item" aria-label="New checklist item" ${noAttr}><button class="btn" id="checkAdd">Add</button></div>
+      <div class="addrow"><input type="text" id="checkNew" placeholder="Add an item" aria-label="New checklist item" ${noAttr}><button class="btn" id="checkAdd">Add</button></div>
       <h3>Labels</h3><div class="chips" id="labels"></div>
-      <div class="addrow"><input type="text" id="labelNew" list="dlLabels" placeholder="Add label" aria-label="New label" ${noAttr}><button class="btn" id="labelAdd">Add</button></div>
+      <div class="addrow"><input type="text" id="labelNew" list="dlLabels" placeholder="Add a label" aria-label="New label" ${noAttr}><button class="btn" id="labelAdd">Add</button></div>
       <datalist id="dlLabels">${allLabels.map(l => `<option value="${esc(l)}">`).join('')}</datalist>
       <h3>Colour</h3><div class="swatches" id="colours"></div>
-      <div class="actions">
-        <button class="btn primary block" id="expVisit">Export visit</button>
-        <button class="btn block" id="expDay">Export day (${esc(fmtDate(v.date))})</button>
-        <button class="btn danger block" id="delVisit">Delete visit</button>
-      </div>
       <div class="capture"><div class="in">
         <label class="btn" id="photoBtn" role="button" tabindex="0">${ICON.camera}Photo<input type="file" id="photoIn" accept="image/*" capture="environment"></label>
         <button class="btn" id="recBtn">${REC_IDLE}</button>
@@ -327,15 +354,13 @@ const APP_VERSION = '1.0.2';
     $('#back').onclick = () => go('#/');
     $('#txt').oninput = e => { cur.text_raw = e.target.value; fit(e.target); scheduleSave(); };
     $('#notes').oninput = e => { cur.typed_notes = e.target.value; fit(e.target); scheduleSave(); };
-    root.querySelectorAll('[data-f]').forEach(el => {
-      el.oninput = el.onchange = () => { cur[el.dataset.f] = el.value; drawHead(); scheduleSave(); };
-    });
-    $('#consent').onclick = e => {
-      const b = e.target.closest('[data-c]'); if (!b) return;
-      cur.consent_stated = b.dataset.c; drawHead(); scheduleSave();
-    };
     $('#pin').onclick = () => { cur.pinned = !cur.pinned; drawHead(); scheduleSave(); };
-    $('#editDate').onclick = editDate;
+    $('#more').onclick = moreSheet;
+    $('#editDetails').onclick = detailsSheet;
+    $('#cchip').onclick = detailsSheet;
+    $('#copyId').onclick = async () => {
+      try { await navigator.clipboard.writeText(cur.visit_id); toast('Visit ID copied'); } catch (e) { toast(cur.visit_id); }
+    };
     $('#checkAdd').onclick = addCheck;
     $('#checkNew').onkeydown = e => { if (e.key === 'Enter') addCheck(); };
     $('#labelAdd').onclick = addLabel;
@@ -347,25 +372,75 @@ const APP_VERSION = '1.0.2';
     $('#recBtn').onclick = () => (Rec.mr ? stopRec() : startRec());
     $('#photoIn').onchange = e => addFiles(e.target, 'photo');
     $('#videoIn').onchange = e => addFiles(e.target, 'video');
-    $('#expVisit').onclick = async () => { await saveNow(); exportFlow('visit', cur); };
-    $('#expDay').onclick = async () => { await saveNow(); exportFlow('day', cur.date); };
-    $('#delVisit').onclick = async () => {
-      if (!await confirmDlg('Delete this visit?', `${cur.visit_id} moves to Recently deleted for ${U.BIN_DAYS} days, then is removed for good.`, 'Delete', true)) return;
-      cur.deleted_at = U.iso(); await saveNow(); toast('Moved to Recently deleted'); go('#/');
+    $('#media').onclick = e => {
+      const t = e.target.closest('[data-open]'), d = e.target.closest('[data-dm]');
+      if (t) viewer(t.dataset.open); else if (d) deleteMedia(d.dataset.dm);
     };
     drawHead(); drawCheck(); drawLabels(); drawColours(); drawMedia();
   }
 
   function drawHead() {
-    const v = cur;
-    $('#pin').innerHTML = ICON.pin + (v.pinned ? 'Pinned' : 'Pin');
+    const v = cur; if (!v || !$('#pin')) return;
     $('#pin').classList.toggle('on', v.pinned); $('#pin').setAttribute('aria-pressed', v.pinned);
-    $('#sum').textContent = [TYPE_NAME[v.visit_type] || v.visit_type, v.country, v.city, v.suburb, v.outlet_type, v.who_role,
-      `consent ${v.consent_stated}`].filter(Boolean).join(' · ');
-    $('#dateLine').textContent = `Date ${fmtDate(v.date)} · ${v.start_time}–${v.end_time}` + (v.date_edit_reason ? ` · date edited: ${v.date_edit_reason}` : '');
-    root.querySelectorAll('#consent [data-c]').forEach(b => b.classList.toggle('on', b.dataset.c === v.consent_stated));
+    $('#pin').setAttribute('aria-label', v.pinned ? 'Unpin' : 'Pin');
+    const sum = [placeOf(v), v.outlet_type, v.who_role].filter(Boolean).join(' · ');
+    $('#sum').textContent = sum || 'Add place and details';
+    $('#sum').classList.toggle('muted', !sum);
+    $('#when').textContent = `${dayLabel(v.date)} · ${v.start_time}–${v.end_time}`;
+    const c = $('#cchip');
+    c.textContent = v.consent_stated === 'yes' ? 'Consent: yes' : 'Consent: no';
+    c.className = `chip ${v.consent_stated === 'yes' ? 'ok' : needsWarning(v) ? 'warn' : ''}`;
     $('#warn').innerHTML = needsWarning(v) ? '<div class="warnbox" role="alert">⚠ This visit has audio or video but consent is marked No.</div>' : '';
-    $('#expDay').textContent = `Export day (${fmtDate(v.date)})`;
+    document.querySelectorAll('#consent [data-c]').forEach(b => b.classList.toggle('on', b.dataset.c === v.consent_stated));
+  }
+
+  // Secondary actions live in one menu so the capture screen stays clean.
+  function moreSheet() {
+    const o = overlay(`<h2>${esc(TYPE_NAME[cur.visit_type] || cur.visit_type)}</h2>
+      <div class="menu">
+        <button class="btn block" id="expVisit">${ICON.share}Export this visit</button>
+        <button class="btn block" id="expDay">${ICON.share}Export whole day · ${esc(dayLabel(cur.date))}</button>
+        <button class="btn block" id="mDetails">${ICON.edit}Edit place and details</button>
+        <button class="btn block" id="editDate">${ICON.calendar}Change date</button>
+        <button class="btn block danger" id="delVisit">${ICON.trash}Delete visit</button>
+        <button class="btn block ghost" id="mClose">Close</button>
+      </div>`);
+    const act = fn => async () => { o.remove(); await fn(); };
+    $('#mClose', o).onclick = () => o.remove();
+    o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+    $('#expVisit', o).onclick = act(async () => { await saveNow(); exportFlow('visit', cur); });
+    $('#expDay', o).onclick = act(async () => { await saveNow(); exportFlow('day', cur.date); });
+    $('#mDetails', o).onclick = act(detailsSheet);
+    $('#editDate', o).onclick = act(editDate);
+    $('#delVisit', o).onclick = act(async () => {
+      if (!await confirmDlg('Delete this visit?', `${cur.visit_id} moves to Recently deleted for ${U.BIN_DAYS} days, then is removed for good.`, 'Delete', true)) return;
+      cur.deleted_at = U.iso(); await saveNow(); toast('Moved to Recently deleted'); go('#/');
+    });
+  }
+
+  function detailsSheet() {
+    const v = cur, noAttr = 'autocomplete="off" autocorrect="off" spellcheck="false"';
+    const o = overlay(`<h2>Place and details</h2>
+      <div class="grid2">
+        <label class="f">City<input type="text" data-f="city" value="${esc(v.city)}" ${noAttr}></label>
+        <label class="f">Suburb<input type="text" data-f="suburb" value="${esc(v.suburb)}" ${noAttr}></label>
+      </div>
+      <label class="f">Outlet type<select data-f="outlet_type">${options(OUTLETS.includes(v.outlet_type) || !v.outlet_type ? OUTLETS : [v.outlet_type, ...OUTLETS], v.outlet_type, '—')}</select></label>
+      <label class="f">Who — role or first name only<input type="text" data-f="who_role" value="${esc(v.who_role)}" ${noAttr}></label>
+      <div class="flabel">Did they say yes to being recorded?</div>
+      <div class="seg" id="consent"><button class="btn" data-c="yes">Yes, consent stated</button><button class="btn" data-c="no">No</button></div>
+      <p class="small muted">${esc(TYPE_NAME[v.visit_type] || v.visit_type)} in ${esc(v.country)} on ${esc(fmtDate(v.date))}. Type and country are part of the visit ID and stay fixed.${v.date_edit_reason ? ` Date edited: ${esc(v.date_edit_reason)}` : ''}</p>
+      <div class="row end"><button class="btn primary grow" id="dDone">Done</button></div>`);
+    o.querySelectorAll('[data-f]').forEach(el => {
+      el.oninput = el.onchange = () => { cur[el.dataset.f] = el.value; drawHead(); scheduleSave(); };
+    });
+    $('#consent', o).onclick = e => {
+      const b = e.target.closest('[data-c]'); if (!b) return;
+      cur.consent_stated = b.dataset.c; drawHead(); scheduleSave();
+    };
+    $('#dDone', o).onclick = () => o.remove();
+    o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+    drawHead();
   }
 
   function editDate() {
@@ -373,7 +448,7 @@ const APP_VERSION = '1.0.2';
       <p class="muted">The visit ID stays ${esc(cur.visit_id)}. A reason is required and is stored with the visit.</p>
       <label class="f">New date<input type="date" id="edDate" value="${esc(cur.date)}"></label>
       <label class="f">Reason<input type="text" id="edReason" autocomplete="off" autocorrect="off" spellcheck="false"></label>
-      <div class="row end"><button class="btn" id="edCancel">Cancel</button><button class="btn primary" id="edSave">Save date</button></div>`);
+      <div class="row end"><button class="btn" id="edCancel">Cancel</button><button class="btn primary grow" id="edSave">Save date</button></div>`);
     $('#edCancel', o).onclick = () => o.remove();
     $('#edSave', o).onclick = () => {
       const d = $('#edDate', o).value, r = $('#edReason', o).value;
@@ -425,43 +500,60 @@ const APP_VERSION = '1.0.2';
   }
 
   /* ---------- media ---------- */
-  // Only adds or removes the rows that changed, so existing players and photos never flicker.
+  let mediaUrl = new Map();   // media id → object URL for the screen that is open
+  const mediaMeta = (m, size) => `${m.kind} · ${esc((m.captured_at || '').slice(11, 16))}${m.duration_s != null ? ' · ' + fmtDur(m.duration_s) : ''}${size != null ? ' · ' + fmtBytes(size) : ''}`;
+
+  // Photos and videos show as a grid of tiles, audio as rows. Only changed items are added or removed (no flicker).
   async function drawMedia() {
     const token = ++drawToken, box = $('#media'), v = cur;
     if (!box || !v) return;
     const items = live(v), ids = new Set(items.map(m => m.id));
-    box.querySelectorAll('.mitem').forEach(n => { if (!ids.has(n.dataset.mid)) n.remove(); });
-    const have = new Set([...box.querySelectorAll('.mitem')].map(n => n.dataset.mid));
+    box.querySelectorAll('[data-mid]').forEach(n => { if (!ids.has(n.dataset.mid)) n.remove(); });
+    const have = new Set([...box.querySelectorAll('[data-mid]')].map(n => n.dataset.mid));
     for (const m of items) {
       if (have.has(m.id)) continue;
       const blob = await DB.getBlob(m.id);
       if (token !== drawToken) return;
-      const url = blob ? URL.createObjectURL(blob) : ''; if (url) urls.push(url);
-      const row = document.createElement('div'); row.className = 'mitem'; row.dataset.mid = m.id;
-      const when = (m.captured_at || '').slice(11, 16);
-      const player = !url ? '<p class="muted">File missing on this device.</p>'
-        : m.kind === 'audio' ? `<audio controls preload="metadata" src="${url}"></audio>`
-        : m.kind === 'video' ? `<video controls playsinline preload="metadata" src="${url}"></video>`
-        : `<img src="${url}" alt="Photo ${esc(m.id)}" data-zoom="${url}">`;
-      row.innerHTML = `<div class="mhead"><strong class="grow">${esc(m.id)}</strong>
-        <span class="muted small">${m.kind} · ${esc(when)}${m.duration_s != null ? ' · ' + fmtDur(m.duration_s) : ''}${blob ? ' · ' + fmtBytes(blob.size) : ''}</span>
-        <button class="btn ghost danger" data-dm="${esc(m.id)}">Delete</button></div>${player}`;
-      box.appendChild(row);
+      const url = blob ? URL.createObjectURL(blob) : '';
+      if (url) { urls.push(url); mediaUrl.set(m.id, url); }
+      const short = m.id.slice(v.visit_id.length + 1);
+      if (m.kind === 'audio') {
+        const row = document.createElement('div'); row.className = 'mitem'; row.dataset.mid = m.id;
+        row.innerHTML = `<div class="mhead"><span class="tbadge">${esc(short)}</span><span class="muted small grow">${mediaMeta(m, blob && blob.size)}</span>
+          <button class="btn ghost danger" data-dm="${esc(m.id)}" aria-label="Delete ${esc(m.id)}">${ICON.trash}</button></div>
+          ${url ? `<audio controls preload="metadata" src="${url}"></audio>` : '<p class="muted">File missing on this device.</p>'}`;
+        $('#maudio').appendChild(row);
+      } else {
+        const tile = document.createElement('button'); tile.className = 'mtile'; tile.dataset.mid = m.id; tile.dataset.open = m.id;
+        tile.setAttribute('aria-label', `Open ${m.kind} ${m.id}`);
+        tile.innerHTML = (!url ? '' : m.kind === 'photo' ? `<img src="${url}" alt="">`
+          : `<video src="${url}#t=0.1" preload="metadata" muted playsinline tabindex="-1"></video>`) +
+          `<span class="mtag">${m.kind === 'video' ? ICON.video : ''}${esc(short)}${m.duration_s != null ? ' · ' + fmtDur(m.duration_s) : ''}</span>`;
+        $('#mgrid').appendChild(tile);
+      }
     }
     let empty = box.querySelector('.mempty');
-    if (!items.length && !empty) { empty = document.createElement('p'); empty.className = 'muted mempty'; empty.textContent = 'Nothing captured yet. Use Record, Photo or Video below.'; box.appendChild(empty); }
+    if (!items.length && !empty) { empty = document.createElement('p'); empty.className = 'muted mempty'; empty.textContent = 'Nothing captured yet. Use the Photo, Record and Video buttons below.'; box.appendChild(empty); }
     else if (items.length && empty) empty.remove();
-    box.onclick = async e => {
-      const z = e.target.closest('[data-zoom]'), d = e.target.closest('[data-dm]');
-      if (z) {
-        const lb = document.createElement('div'); lb.className = 'lightbox';
-        lb.innerHTML = `<img src="${z.dataset.zoom}" alt="">`; lb.onclick = () => lb.remove(); document.body.appendChild(lb);
-      } else if (d) {
-        if (!await confirmDlg('Delete this item?', `${d.dataset.dm} moves to Recently deleted for ${U.BIN_DAYS} days.`, 'Delete', true)) return;
-        const m = cur.media.find(x => x.id === d.dataset.dm); if (!m) return;
-        m.deleted_at = U.iso(); await saveNow(); drawHead(); drawMedia();
-      }
-    };
+  }
+
+  function viewer(id) {
+    const m = cur && cur.media.find(x => x.id === id), url = mediaUrl.get(id);
+    if (!m) return;
+    const o = overlay(`<h2 class="mono">${esc(m.id)}</h2><p class="muted small">${mediaMeta(m)}</p>
+      ${!url ? '<p class="muted">File missing on this device.</p>' : m.kind === 'photo' ? `<img class="vmedia" src="${url}" alt="Photo ${esc(m.id)}">`
+        : `<video class="vmedia" controls playsinline preload="metadata" src="${url}"></video>`}
+      <div class="row end"><button class="btn danger" id="vDel">${ICON.trash}Delete</button><button class="btn primary grow" id="vDone">Done</button></div>`);
+    $('#vDone', o).onclick = () => o.remove();
+    o.addEventListener('click', e => { if (e.target === o) o.remove(); });
+    $('#vDel', o).onclick = async () => { if (await deleteMedia(id)) o.remove(); };
+  }
+
+  async function deleteMedia(id) {
+    if (!await confirmDlg('Delete this item?', `${id} moves to Recently deleted for ${U.BIN_DAYS} days.`, 'Delete', true)) return false;
+    const m = cur && cur.media.find(x => x.id === id); if (!m) return false;
+    m.deleted_at = U.iso(); await saveNow(); drawHead(); drawMedia();
+    return true;
   }
 
   function probeDuration(blob, kind) {
@@ -597,7 +689,7 @@ const APP_VERSION = '1.0.2';
     const all = await DB.getVisits();
     const binCount = all.filter(v => v.deleted_at).length + all.filter(v => !v.deleted_at).reduce((n, v) => n + v.media.filter(m => m.deleted_at).length, 0);
     root.innerHTML = `
-      <header class="bar"><button class="btn ghost" id="back">‹ Visits</button><h1>Settings</h1></header>
+      <header class="bar"><button class="btn icon" id="back" aria-label="Back to visits">${ICON.back}</button><h1>Settings</h1></header>
       <h3>Laptop / other device</h3>
       <div class="box"><p>Import an exported .zip to view the same visits here. Visits already on this device are skipped, never overwritten.</p>
         <label class="btn primary block">Import .zip<input type="file" id="impIn" accept=".zip,application/zip,application/x-zip-compressed" multiple hidden></label></div>
@@ -643,7 +735,7 @@ const APP_VERSION = '1.0.2';
     const visits = all.filter(v => v.deleted_at).sort((a, b) => b.deleted_at.localeCompare(a.deleted_at));
     const media = all.filter(v => !v.deleted_at).flatMap(v => v.media.filter(m => m.deleted_at).map(m => ({ v, m })));
     root.innerHTML = `
-      <header class="bar"><button class="btn ghost" id="back">‹ Settings</button><h1>Recently deleted</h1></header>
+      <header class="bar"><button class="btn icon" id="back" aria-label="Back to settings">${ICON.back}</button><h1>Recently deleted</h1></header>
       <p class="muted">Items are removed for good ${U.BIN_DAYS} days after deletion.</p>
       ${!visits.length && !media.length ? '<p class="muted pad">The bin is empty.</p>' : ''}
       ${visits.map(v => `<div class="box"><strong>${esc(v.visit_id)}</strong>

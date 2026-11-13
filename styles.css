@@ -189,3 +189,60 @@ details.meta .in { padding: 0 16px 16px; }
 ul.plain { margin: 6px 0; padding-left: 20px; }
 ul.plain li { margin: 6px 0; }
 .sheet .row.end { position: sticky; bottom: -22px; margin: 18px 0 -22px; padding: 12px 0 22px; background: var(--bg); }
+
+/* ---- v1.1 layout ---- */
+.mono { font-family: var(--mono); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid2 > * { min-width: 0; }
+.flabel { margin-top: 16px; font-weight: 650; font-size: 14px; color: var(--muted); }
+.chip svg { width: 15px; height: 15px; }
+button.chip { font: inherit; font-size: 13px; font-weight: 650; color: inherit; cursor: pointer; min-height: 32px; }
+
+.tchips { display: flex; gap: 8px; overflow-x: auto; margin: 12px -16px 0; padding: 2px 16px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.tchips::-webkit-scrollbar { display: none; }
+.tchips:empty { display: none; }
+.tchip { flex: none; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--card);
+  color: var(--text); font: inherit; font-size: 15px; font-weight: 650; cursor: pointer; white-space: nowrap; }
+.tchip.on { background: var(--text); border-color: var(--text); color: var(--bg); }
+.filters { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+.ghead h3 .count { display: inline-block; min-width: 22px; padding: 1px 7px; margin-left: 4px; border-radius: 999px; background: var(--line); color: var(--text); text-align: center; letter-spacing: 0; }
+.ghead .btn svg { width: 17px; height: 17px; }
+
+.card .ctitle { display: flex; align-items: center; gap: 8px; }
+.card .ctext { font-size: 17px; font-weight: 750; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .cid { display: block; font-family: var(--mono); font-size: 12.5px; font-weight: 500; color: var(--muted); margin-top: 5px; letter-spacing: 0; }
+.card .snip { font-size: 16px; margin-top: 8px; }
+.empty ol { text-align: left; display: inline-block; margin: 14px auto 0; padding-left: 22px; }
+.empty ol li { margin: 8px 0; }
+.empty b { color: var(--text); }
+
+.savestate { font-size: 13px; font-weight: 600; color: var(--muted); text-align: right; padding-right: 4px; }
+.vhead { margin: 4px 0 14px; }
+.vtitle { display: flex; align-items: center; gap: 10px; }
+.vtitle h1 { font-size: 30px; }
+.vtitle .tbadge { font-size: 15px; padding: 3px 8px; }
+.vsub { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; margin-top: 2px; padding: 4px 0; border: 0; background: transparent;
+  color: var(--text); font: inherit; font-size: 16px; font-weight: 550; text-align: left; cursor: pointer; }
+.vsub svg { width: 17px; height: 17px; color: var(--muted); }
+.vsub .muted { font-weight: 500; }
+.vhead .chips { margin-top: 4px; }
+.vid { font-family: var(--mono); font-size: 12.5px; font-weight: 600; letter-spacing: 0; margin: 0; }
+
+.mgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mgrid:empty { display: none; }
+.mtile { position: relative; aspect-ratio: 1; padding: 0; border: 1.5px solid var(--line); border-radius: 16px; overflow: hidden;
+  background: #0b0f0d; cursor: pointer; box-shadow: var(--shadow); }
+.mtile img, .mtile video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.mtag { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 8px;
+  background: rgba(0,0,0,.72); color: #fff; font-family: var(--mono); font-size: 12px; font-weight: 700; }
+.mtag svg { width: 13px; height: 13px; }
+#maudio .mitem:first-child { margin-top: 10px; }
+.mgrid:empty + #maudio .mitem:first-child { margin-top: 0; }
+.mhead { flex-wrap: nowrap; }
+.mhead .btn { min-width: 44px; padding: 6px; }
+.vmedia { display: block; width: 100%; max-height: 62vh; object-fit: contain; border-radius: 16px; background: #000; margin-top: 10px; }
+
+.menu { display: grid; gap: 8px; }
+.menu .btn { justify-content: flex-start; min-height: 54px; }
+.menu .btn.ghost { justify-content: center; }
+.seg .btn { padding: 10px 8px; }

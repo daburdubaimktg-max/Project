@@ -1,6 +1,6 @@
 /* NEE service worker: caches every app file so the app opens with no signal.
    Bump CACHE_VERSION on every release (keep it in step with APP_VERSION in app.js). */
-const CACHE_VERSION = 'nee-1.0.2';
+const CACHE_VERSION = 'nee-1.1.0';
 
 const FILES = [
   './', 'index.html', 'styles.css', 'db.js', 'export.js', 'app.js',
